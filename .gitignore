@@ -1,0 +1,7 @@
+# Keil generated build files and per-user IDE settings
+MotorContrl/MDK-ARM/MotorContrl/
+MotorContrl/MDK-ARM/*.uvguix.*
+MotorContrl/MDK-ARM/*.uvoptx
+
+# Temporary local files
+tmp/
