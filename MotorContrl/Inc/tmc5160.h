@@ -74,6 +74,8 @@ Register address
 
 #define TMC5160_PWMCONF        0x70
 
+#define TMC5160_MSCNT          0x6A
+
 /*
 ==================================================
 GCONF 0x00
