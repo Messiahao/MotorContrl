@@ -71,6 +71,13 @@ volatile uint8_t x_tmc5160_static_read_test_done;
 volatile uint32_t x_tmc5160_chopconf_configured;
 volatile uint8_t x_tmc5160_low_current_config_ok;
 volatile uint8_t x_tmc5160_low_current_config_test_done;
+static uint32_t x_tmc5160_enable_test_tick;
+static uint8_t x_tmc5160_enable_test_pending;
+volatile uint32_t x_tmc5160_gstat_enabled;
+volatile uint32_t x_tmc5160_drv_status_enabled;
+volatile uint8_t x_tmc5160_enable_test_ok;
+volatile uint8_t x_tmc5160_enable_test_done;
+volatile uint8_t x_tmc5160_enable_test_active;
 /*
 static uint32_t auxiliary_output_test_tick;
 static uint8_t auxiliary_output_test_state;
@@ -202,6 +209,42 @@ int main(void)
            ((x_tmc5160_chopconf & ~TMC5160_TOFF_MASK) |
             TMC5160_TOFF(3U)));
       x_tmc5160_low_current_config_test_done = 1U;
+    }
+
+    if ((x_tmc5160_low_current_config_ok != 0U) &&
+        (x_tmc5160_enable_test_done == 0U) &&
+        (x_tmc5160_enable_test_pending == 0U))
+    {
+      TMC5160_ENABLE(&x_tmc5160);
+      x_tmc5160_enable_test_tick = HAL_GetTick();
+      x_tmc5160_enable_test_pending = 1U;
+      x_tmc5160_enable_test_active = 1U;
+    }
+
+    if ((x_tmc5160_enable_test_pending != 0U) &&
+        ((HAL_GetTick() - x_tmc5160_enable_test_tick) >= 200U))
+    {
+      x_tmc5160_gstat_enabled =
+          TMC5160_ReadRegister(&x_tmc5160, TMC5160_GSTAT);
+      x_tmc5160_drv_status_enabled =
+          TMC5160_ReadRegister(&x_tmc5160, TMC5160_DRV_STATUS);
+      x_tmc5160_enable_test_ok =
+          ((x_tmc5160_gstat_enabled &
+            (TMC5160_GSTAT_DRV_ERR | TMC5160_GSTAT_UV_CP)) == 0U);
+      if (x_tmc5160_enable_test_ok == 0U)
+      {
+        TMC5160_DISABLE(&x_tmc5160);
+        x_tmc5160_enable_test_active = 0U;
+      }
+      x_tmc5160_enable_test_done = 1U;
+      x_tmc5160_enable_test_pending = 0U;
+    }
+
+    if ((x_tmc5160_enable_test_active != 0U) &&
+        ((HAL_GetTick() - x_tmc5160_enable_test_tick) >= 5000U))
+    {
+      TMC5160_DISABLE(&x_tmc5160);
+      x_tmc5160_enable_test_active = 0U;
     }
     /*
     if ((auxiliary_output_test_state == 0U) &&
