@@ -85,6 +85,14 @@ volatile uint32_t x_tmc5160_mscnt_after_step;
 volatile uint16_t x_tmc5160_mscnt_step_delta;
 volatile uint8_t x_tmc5160_step_test_ok;
 volatile uint8_t x_tmc5160_step_test_done;
+static uint32_t x_tmc5160_multi_step_test_tick;
+static uint8_t x_tmc5160_multi_step_test_state;
+static uint8_t x_tmc5160_multi_step_test_count;
+volatile uint32_t x_tmc5160_mscnt_before_multi_step;
+volatile uint32_t x_tmc5160_mscnt_after_multi_step;
+volatile uint16_t x_tmc5160_mscnt_multi_step_delta;
+volatile uint8_t x_tmc5160_multi_step_test_ok;
+volatile uint8_t x_tmc5160_multi_step_test_done;
 /*
 static uint32_t auxiliary_output_test_tick;
 static uint8_t auxiliary_output_test_state;
@@ -301,6 +309,71 @@ int main(void)
         x_step_gpio.Pull = GPIO_NOPULL;
         x_step_gpio.Speed = GPIO_SPEED_FREQ_HIGH;
         HAL_GPIO_Init(X_STEP_GPIO_Port, &x_step_gpio);
+      }
+    }
+
+    if ((x_tmc5160_enable_test_active != 0U) &&
+        (x_tmc5160_step_test_ok != 0U) &&
+        (x_tmc5160_multi_step_test_done == 0U))
+    {
+      if (x_tmc5160_multi_step_test_state == 0U)
+      {
+        GPIO_InitTypeDef x_step_gpio = {0};
+
+        x_step_gpio.Pin = X_STEP_Pin;
+        x_step_gpio.Mode = GPIO_MODE_OUTPUT_PP;
+        x_step_gpio.Pull = GPIO_NOPULL;
+        x_step_gpio.Speed = GPIO_SPEED_FREQ_HIGH;
+        HAL_GPIO_Init(X_STEP_GPIO_Port, &x_step_gpio);
+        HAL_GPIO_WritePin(X_DIR_GPIO_Port, X_DIR_Pin, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(X_STEP_GPIO_Port, X_STEP_Pin, GPIO_PIN_RESET);
+        x_tmc5160_mscnt_before_multi_step =
+            TMC5160_ReadRegister(&x_tmc5160, TMC5160_MSCNT);
+        x_tmc5160_multi_step_test_tick = HAL_GetTick();
+        x_tmc5160_multi_step_test_state = 1U;
+      }
+      else if ((x_tmc5160_multi_step_test_state == 1U) &&
+               ((HAL_GetTick() - x_tmc5160_multi_step_test_tick) >= 1U))
+      {
+        HAL_GPIO_WritePin(X_STEP_GPIO_Port, X_STEP_Pin, GPIO_PIN_SET);
+        x_tmc5160_multi_step_test_tick = HAL_GetTick();
+        x_tmc5160_multi_step_test_state = 2U;
+      }
+      else if ((x_tmc5160_multi_step_test_state == 2U) &&
+               ((HAL_GetTick() - x_tmc5160_multi_step_test_tick) >= 1U))
+      {
+        HAL_GPIO_WritePin(X_STEP_GPIO_Port, X_STEP_Pin, GPIO_PIN_RESET);
+        x_tmc5160_multi_step_test_tick = HAL_GetTick();
+        x_tmc5160_multi_step_test_state = 3U;
+      }
+      else if ((x_tmc5160_multi_step_test_state == 3U) &&
+               ((HAL_GetTick() - x_tmc5160_multi_step_test_tick) >= 49U))
+      {
+        x_tmc5160_multi_step_test_count++;
+        if (x_tmc5160_multi_step_test_count >= 16U)
+        {
+          GPIO_InitTypeDef x_step_gpio = {0};
+
+          x_tmc5160_mscnt_after_multi_step =
+              TMC5160_ReadRegister(&x_tmc5160, TMC5160_MSCNT);
+          x_tmc5160_mscnt_multi_step_delta =
+              (uint16_t)((x_tmc5160_mscnt_after_multi_step -
+                          x_tmc5160_mscnt_before_multi_step) & 0x03FFU);
+          x_tmc5160_multi_step_test_ok =
+              ((x_tmc5160_mscnt_multi_step_delta == 16U) ||
+               (x_tmc5160_mscnt_multi_step_delta == 0x03F0U));
+          x_tmc5160_multi_step_test_done = 1U;
+
+          x_step_gpio.Pin = X_STEP_Pin;
+          x_step_gpio.Mode = GPIO_MODE_AF_PP;
+          x_step_gpio.Pull = GPIO_NOPULL;
+          x_step_gpio.Speed = GPIO_SPEED_FREQ_HIGH;
+          HAL_GPIO_Init(X_STEP_GPIO_Port, &x_step_gpio);
+        }
+        else
+        {
+          x_tmc5160_multi_step_test_state = 1U;
+        }
       }
     }
 
