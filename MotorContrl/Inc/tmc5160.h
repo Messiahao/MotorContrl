@@ -138,6 +138,8 @@ CHOPCONF 0x6C
 */
 
 #define TMC5160_TOFF(x)							((x)&0x0F)
+
+#define TMC5160_TOFF_MASK					0x0F
 				
 #define TMC5160_HSTRT(x)						(((x)&0x07)<<4)
 				

@@ -68,6 +68,9 @@ volatile uint8_t x_tmc5160_gstat_uv_cp_clear_ok;
 volatile uint8_t x_tmc5160_gstat_clear_test_done;
 volatile uint32_t x_tmc5160_chopconf;
 volatile uint8_t x_tmc5160_static_read_test_done;
+volatile uint32_t x_tmc5160_chopconf_configured;
+volatile uint8_t x_tmc5160_low_current_config_ok;
+volatile uint8_t x_tmc5160_low_current_config_test_done;
 /*
 static uint32_t auxiliary_output_test_tick;
 static uint8_t auxiliary_output_test_state;
@@ -183,6 +186,22 @@ int main(void)
       x_tmc5160_chopconf =
           TMC5160_ReadRegister(&x_tmc5160, TMC5160_CHOPCONF);
       x_tmc5160_static_read_test_done = 1U;
+    }
+
+    if ((x_tmc5160_static_read_test_done != 0U) &&
+        (x_tmc5160_low_current_config_test_done == 0U))
+    {
+      TMC5160_WriteRegister(&x_tmc5160, TMC5160_IHOLD_IRUN, 0U);
+      TMC5160_WriteRegister(&x_tmc5160, TMC5160_CHOPCONF,
+                            (x_tmc5160_chopconf & ~TMC5160_TOFF_MASK) |
+                            TMC5160_TOFF(3U));
+      x_tmc5160_chopconf_configured =
+          TMC5160_ReadRegister(&x_tmc5160, TMC5160_CHOPCONF);
+      x_tmc5160_low_current_config_ok =
+          (x_tmc5160_chopconf_configured ==
+           ((x_tmc5160_chopconf & ~TMC5160_TOFF_MASK) |
+            TMC5160_TOFF(3U)));
+      x_tmc5160_low_current_config_test_done = 1U;
     }
     /*
     if ((auxiliary_output_test_state == 0U) &&
