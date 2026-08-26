@@ -37,9 +37,13 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define LIMIT_GPIO_STATIC_TEST 1U
+#define LIMIT_GPIO_STATIC_TEST 0U
 #define LIMIT_GPIO_POLL_PERIOD_MS 10U
 #define SERIAL_TEST_FRAME_SIZE 14U
+#define X_MOTION_TEST_DURATION_MS 1200U
+#define X_MOTION_TEST_DISABLE_DELAY_MS 6000U
+#define X_MOTION_IHOLD 0U
+#define X_MOTION_IRUN 3U
 
 /* USER CODE END PD */
 
@@ -96,7 +100,6 @@ volatile uint32_t x_tmc5160_mscnt_after_multi_step;
 volatile uint16_t x_tmc5160_mscnt_multi_step_delta;
 volatile uint8_t x_tmc5160_multi_step_test_ok;
 volatile uint8_t x_tmc5160_multi_step_test_done;
-static uint32_t x_tmc5160_motion_test_tick;
 static uint32_t x_tmc5160_motion_test_start_tick;
 static uint8_t x_tmc5160_motion_test_state;
 volatile uint8_t x_tmc5160_motion_test_active;
@@ -254,7 +257,8 @@ int main(void)
   HAL_GPIO_WritePin(Y_DIR_GPIO_Port, Y_DIR_Pin, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(Z_DIR_GPIO_Port, Z_DIR_Pin, GPIO_PIN_RESET);
   limit_gpio_poll_tick = HAL_GetTick();
-  x_tmc5160_spi_test_pending = 0U;
+  x_tmc5160_spi_test_tick = HAL_GetTick();
+  x_tmc5160_spi_test_pending = 1U;
   serial_test_build_marker = 0x20260826U;
   /*
   auxiliary_output_test_tick = HAL_GetTick();
@@ -354,7 +358,9 @@ int main(void)
     if ((x_tmc5160_static_read_test_done != 0U) &&
         (x_tmc5160_low_current_config_test_done == 0U))
     {
-      TMC5160_WriteRegister(&x_tmc5160, TMC5160_IHOLD_IRUN, 0U);
+      TMC5160_WriteRegister(&x_tmc5160, TMC5160_IHOLD_IRUN,
+                            TMC5160_IHOLD(X_MOTION_IHOLD) |
+                            TMC5160_IRUN(X_MOTION_IRUN));
       TMC5160_WriteRegister(&x_tmc5160, TMC5160_CHOPCONF,
                             (x_tmc5160_chopconf & ~TMC5160_TOFF_MASK) |
                             TMC5160_TOFF(3U));
@@ -524,50 +530,39 @@ int main(void)
     {
       if (x_tmc5160_motion_test_state == 0U)
       {
+        HAL_GPIO_WritePin(X_DIR_GPIO_Port, X_DIR_Pin, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(X_STEP_GPIO_Port, X_STEP_Pin, GPIO_PIN_RESET);
+        x_tmc5160_motion_test_start_tick = HAL_GetTick();
+        if (HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2) == HAL_OK)
+        {
+          x_tmc5160_motion_test_active = 1U;
+          x_tmc5160_motion_test_state = 1U;
+        }
+        else
+        {
+          x_tmc5160_motion_test_done = 1U;
+        }
+      }
+      else if ((HAL_GetTick() - x_tmc5160_motion_test_start_tick) >=
+               X_MOTION_TEST_DURATION_MS)
+      {
         GPIO_InitTypeDef x_step_gpio = {0};
 
+        HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_2);
         x_step_gpio.Pin = X_STEP_Pin;
         x_step_gpio.Mode = GPIO_MODE_OUTPUT_PP;
         x_step_gpio.Pull = GPIO_NOPULL;
         x_step_gpio.Speed = GPIO_SPEED_FREQ_HIGH;
         HAL_GPIO_Init(X_STEP_GPIO_Port, &x_step_gpio);
-        HAL_GPIO_WritePin(X_DIR_GPIO_Port, X_DIR_Pin, GPIO_PIN_RESET);
-        HAL_GPIO_WritePin(X_STEP_GPIO_Port, X_STEP_Pin, GPIO_PIN_RESET);
-        x_tmc5160_motion_test_start_tick = HAL_GetTick();
-        x_tmc5160_motion_test_tick = x_tmc5160_motion_test_start_tick;
-        x_tmc5160_motion_test_active = 1U;
-        x_tmc5160_motion_test_state = 1U;
-      }
-      else if ((HAL_GetTick() - x_tmc5160_motion_test_start_tick) >= 4000U)
-      {
-        GPIO_InitTypeDef x_step_gpio = {0};
-
         HAL_GPIO_WritePin(X_STEP_GPIO_Port, X_STEP_Pin, GPIO_PIN_RESET);
         x_tmc5160_motion_test_active = 0U;
         x_tmc5160_motion_test_done = 1U;
-        x_step_gpio.Pin = X_STEP_Pin;
-        x_step_gpio.Mode = GPIO_MODE_AF_PP;
-        x_step_gpio.Pull = GPIO_NOPULL;
-        x_step_gpio.Speed = GPIO_SPEED_FREQ_HIGH;
-        HAL_GPIO_Init(X_STEP_GPIO_Port, &x_step_gpio);
-      }
-      else if ((x_tmc5160_motion_test_state == 1U) &&
-               ((HAL_GetTick() - x_tmc5160_motion_test_tick) >= 1U))
-      {
-        HAL_GPIO_WritePin(X_STEP_GPIO_Port, X_STEP_Pin, GPIO_PIN_SET);
-        x_tmc5160_motion_test_state = 2U;
-      }
-      else if ((x_tmc5160_motion_test_state == 2U) &&
-               ((HAL_GetTick() - x_tmc5160_motion_test_tick) >= 2U))
-      {
-        HAL_GPIO_WritePin(X_STEP_GPIO_Port, X_STEP_Pin, GPIO_PIN_RESET);
-        x_tmc5160_motion_test_state = 1U;
-        x_tmc5160_motion_test_tick = HAL_GetTick();
       }
     }
 
     if ((x_tmc5160_enable_test_active != 0U) &&
-        ((HAL_GetTick() - x_tmc5160_enable_test_tick) >= 6000U))
+        ((HAL_GetTick() - x_tmc5160_enable_test_tick) >=
+         X_MOTION_TEST_DISABLE_DELAY_MS))
     {
       TMC5160_DISABLE(&x_tmc5160);
       x_tmc5160_enable_test_active = 0U;
