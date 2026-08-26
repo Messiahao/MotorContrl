@@ -37,6 +37,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define LIMIT_GPIO_STATIC_TEST 1U
+#define LIMIT_GPIO_POLL_PERIOD_MS 10U
 
 /* USER CODE END PD */
 
@@ -98,6 +100,18 @@ static uint32_t x_tmc5160_motion_test_start_tick;
 static uint8_t x_tmc5160_motion_test_state;
 volatile uint8_t x_tmc5160_motion_test_active;
 volatile uint8_t x_tmc5160_motion_test_done;
+static uint32_t limit_gpio_poll_tick;
+volatile uint8_t limit_gpio_sample_valid;
+volatile uint8_t limit_pc6_level;
+volatile uint8_t limit_pb15_level;
+volatile uint8_t limit_pb14_level;
+volatile uint8_t limit_pc9_level;
+volatile uint8_t limit_pc8_level;
+volatile uint8_t limit_pc7_level;
+volatile uint8_t limit_pa12_level;
+volatile uint8_t limit_pa11_level;
+volatile uint8_t limit_pa10_level;
+volatile uint16_t limit_active_mask;
 /*
 static uint32_t auxiliary_output_test_tick;
 static uint8_t auxiliary_output_test_state;
@@ -153,9 +167,13 @@ int main(void)
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
   LED_Init();
-  TMC5160_DISABLE(&x_tmc5160);
-  x_tmc5160_spi_test_tick = HAL_GetTick();
-  x_tmc5160_spi_test_pending = 1U;
+  HAL_GPIO_WritePin(GPIOC, X_EN_Pin | Y_EN_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, Z_EN_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(X_DIR_GPIO_Port, X_DIR_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(Y_DIR_GPIO_Port, Y_DIR_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(Z_DIR_GPIO_Port, Z_DIR_Pin, GPIO_PIN_RESET);
+  limit_gpio_poll_tick = HAL_GetTick();
+  x_tmc5160_spi_test_pending = 0U;
   /*
   auxiliary_output_test_tick = HAL_GetTick();
   */
@@ -168,6 +186,41 @@ int main(void)
     /* USER CODE END WHILE */
     LED_Task();
     /* USER CODE BEGIN 3 */
+    if ((HAL_GetTick() - limit_gpio_poll_tick) >=
+        LIMIT_GPIO_POLL_PERIOD_MS)
+    {
+      limit_gpio_poll_tick = HAL_GetTick();
+      limit_pc6_level = (uint8_t)HAL_GPIO_ReadPin(X_LIM_L_GPIO_Port,
+                                                   X_LIM_L_Pin);
+      limit_pb15_level = (uint8_t)HAL_GPIO_ReadPin(X_LIM_H_GPIO_Port,
+                                                    X_LIM_H_Pin);
+      limit_pb14_level = (uint8_t)HAL_GPIO_ReadPin(X_LIM_R_GPIO_Port,
+                                                    X_LIM_R_Pin);
+      limit_pc9_level = (uint8_t)HAL_GPIO_ReadPin(Y_LIM_L_GPIO_Port,
+                                                   Y_LIM_L_Pin);
+      limit_pc8_level = (uint8_t)HAL_GPIO_ReadPin(Y_LIM_H_GPIO_Port,
+                                                   Y_LIM_H_Pin);
+      limit_pc7_level = (uint8_t)HAL_GPIO_ReadPin(Y_LIM_R_GPIO_Port,
+                                                   Y_LIM_R_Pin);
+      limit_pa12_level = (uint8_t)HAL_GPIO_ReadPin(Z_LIM_L_GPIO_Port,
+                                                    Z_LIM_L_Pin);
+      limit_pa11_level = (uint8_t)HAL_GPIO_ReadPin(Z_LIM_H_GPIO_Port,
+                                                    Z_LIM_H_Pin);
+      limit_pa10_level = (uint8_t)HAL_GPIO_ReadPin(Z_LIM_R_GPIO_Port,
+                                                    Z_LIM_R_Pin);
+      limit_active_mask = 0U;
+      if (limit_pc6_level == GPIO_PIN_RESET) limit_active_mask |= (1U << 0);
+      if (limit_pb15_level == GPIO_PIN_RESET) limit_active_mask |= (1U << 1);
+      if (limit_pb14_level == GPIO_PIN_RESET) limit_active_mask |= (1U << 2);
+      if (limit_pc9_level == GPIO_PIN_RESET) limit_active_mask |= (1U << 3);
+      if (limit_pc8_level == GPIO_PIN_RESET) limit_active_mask |= (1U << 4);
+      if (limit_pc7_level == GPIO_PIN_RESET) limit_active_mask |= (1U << 5);
+      if (limit_pa12_level == GPIO_PIN_RESET) limit_active_mask |= (1U << 6);
+      if (limit_pa11_level == GPIO_PIN_RESET) limit_active_mask |= (1U << 7);
+      if (limit_pa10_level == GPIO_PIN_RESET) limit_active_mask |= (1U << 8);
+      limit_gpio_sample_valid = 1U;
+    }
+#if !LIMIT_GPIO_STATIC_TEST
     if ((x_tmc5160_spi_test_pending != 0U) &&
         ((HAL_GetTick() - x_tmc5160_spi_test_tick) >= 100U))
     {
@@ -436,6 +489,7 @@ int main(void)
       TMC5160_DISABLE(&x_tmc5160);
       x_tmc5160_enable_test_active = 0U;
     }
+#endif
     /*
     if ((auxiliary_output_test_state == 0U) &&
         ((HAL_GetTick() - auxiliary_output_test_tick) >= 5000U))

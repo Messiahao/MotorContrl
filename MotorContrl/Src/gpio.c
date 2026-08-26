@@ -99,28 +99,21 @@ void MX_GPIO_Init(void)
 
   /*Configure GPIO pins : X_LIM_R_Pin X_LIM_H_Pin */
   GPIO_InitStruct.Pin = X_LIM_R_Pin|X_LIM_H_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pins : X_LIM_L_Pin Y_LIM_R_Pin Y_LIM_H_Pin Y_LIM_L_Pin */
   GPIO_InitStruct.Pin = X_LIM_L_Pin|Y_LIM_R_Pin|Y_LIM_H_Pin|Y_LIM_L_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pins : Z_LIM_R_Pin Z_LIM_H_Pin Z_LIM_L_Pin */
   GPIO_InitStruct.Pin = Z_LIM_R_Pin|Z_LIM_H_Pin|Z_LIM_L_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
-
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 }
 
