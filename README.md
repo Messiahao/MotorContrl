@@ -28,6 +28,9 @@ Keil µVision + Arm Compiler 6 构建。开发过程遵循“先验证通信，�
 | `v0.8-sixteen-step-pass` | 在单步通过后增加有限脉冲批次。 | 固定方向，发送 16 个约 20 Hz 脉冲；MSCNT 变化 `+16`，确认输入通路连续可靠。 |
 | `v0.9-low-current-motion-pass` | 将计数测试扩展为定时短时运动。 | 最小电流下约 500 Hz 运行 4 秒，理论约 14°；手感确认电机连续运动，结束后自动禁用。 |
 | `v0.10-limit-static-input-deferred` | 暂停电机运动验证，加入限位输入静态读取框架。 | 配置 9 路限位输入，暂不启用 EXTI；因现有限位光电开关损坏，静态输入尚未宣称实机通过，因此没有对应 HEX。 |
+| `v0.11-serial-link-test-pass` | 增加首条串口链路测试命令 `0x0100`（线上字节 `01 00`）及固定应答。 | CN4/USART3 收到完整 14 字节测试帧，回传帧正确；仅验证串口链路，不驱动电机。 |
+| `v0.12-cn4-primary-interface` | 根据实机接线结果冻结 CN4 为主机串口。 | 使用 USART3（PC10/PC11，115200 8N1）；CN6/USART2 保留作后续扩展。 |
+| `v0.13-cn4-serial-link-pass` | 将已通过验证的 CN4 串口版本正式打包归档，并补充匹配 HEX。 | 实机验证：收到 14 字节，最后字节 `0xAA`，UART 错误计数为 0，回传正确；限位硬件仍暂缓，未进行电机运动。 |
 
 ## 当前硬件与安全状态
 
@@ -52,5 +55,6 @@ git switch --detach v0.8-sixteen-step-pass
 git switch master
 ```
 
-后续开发顺序记录在 `doc/risk_and_development_plan.md`：先完成限位 GPIO 的实机验证，
-再冻结 USART2 串口帧格式，之后才允许通过串口控制单轴低速短时运动。
+当前主机通信使用 CN4/USART3；CN6/USART2 保留作后续扩展。后续开发顺序记录在
+`doc/risk_and_development_plan.md`：限位开关到货后先完成 GPIO 实机验证，再冻结运动控制
+协议，之后才允许通过串口控制单轴低速短时运动。
