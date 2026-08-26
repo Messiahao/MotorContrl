@@ -39,6 +39,7 @@
 /* USER CODE BEGIN PD */
 #define LIMIT_GPIO_STATIC_TEST 1U
 #define LIMIT_GPIO_POLL_PERIOD_MS 10U
+#define SERIAL_TEST_FRAME_SIZE 14U
 
 /* USER CODE END PD */
 
@@ -112,6 +113,16 @@ volatile uint8_t limit_pa12_level;
 volatile uint8_t limit_pa11_level;
 volatile uint8_t limit_pa10_level;
 volatile uint16_t limit_active_mask;
+static uint8_t serial_test_rx_frame[SERIAL_TEST_FRAME_SIZE];
+static uint8_t serial_test_rx_index;
+volatile uint32_t serial_test_command_count;
+volatile uint32_t serial_test_frame_error_count;
+volatile uint32_t serial_test_rx_byte_count;
+volatile uint32_t serial_test_uart_error_count;
+volatile uint8_t serial_test_last_rx_byte;
+volatile uint8_t serial_test_last_frame_ok;
+volatile uint8_t serial_test_last_response_ok;
+volatile uint32_t serial_test_build_marker;
 /*
 static uint32_t auxiliary_output_test_tick;
 static uint8_t auxiliary_output_test_state;
@@ -121,11 +132,81 @@ static uint8_t auxiliary_output_test_state;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
+static void Serial_Test_Task(void);
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+static void Serial_Test_Task(void)
+{
+  uint8_t byte;
+  static const uint8_t response[SERIAL_TEST_FRAME_SIZE] = {
+    0xAAU, 0xAAU, 0x01U, 0x00U,
+    0x00U, 0x00U, 0x00U, 0x00U,
+    0x00U, 0x00U, 0x00U, 0x00U,
+    0x55U, 0x55U
+  };
+
+  if (__HAL_UART_GET_FLAG(&huart3, UART_FLAG_ORE) != RESET)
+  {
+    __HAL_UART_CLEAR_OREFLAG(&huart3);
+    serial_test_uart_error_count++;
+  }
+
+  while (__HAL_UART_GET_FLAG(&huart3, UART_FLAG_RXNE) != RESET)
+  {
+    byte = (uint8_t)(huart3.Instance->DR & 0x00FFU);
+    serial_test_rx_byte_count++;
+    serial_test_last_rx_byte = byte;
+
+    if ((serial_test_rx_index == 0U) && (byte != 0x55U))
+    {
+      continue;
+    }
+    if ((serial_test_rx_index == 1U) && (byte != 0x55U))
+    {
+      serial_test_rx_index = (byte == 0x55U) ? 1U : 0U;
+      continue;
+    }
+
+    serial_test_rx_frame[serial_test_rx_index++] = byte;
+    if (serial_test_rx_index < SERIAL_TEST_FRAME_SIZE)
+    {
+      continue;
+    }
+
+    serial_test_rx_index = 0U;
+    serial_test_last_frame_ok =
+        (serial_test_rx_frame[0] == 0x55U) &&
+        (serial_test_rx_frame[1] == 0x55U) &&
+        (serial_test_rx_frame[2] == 0x01U) &&
+        (serial_test_rx_frame[3] == 0x00U) &&
+        (serial_test_rx_frame[4] == 0x00U) &&
+        (serial_test_rx_frame[5] == 0x00U) &&
+        (serial_test_rx_frame[6] == 0x00U) &&
+        (serial_test_rx_frame[7] == 0x00U) &&
+        (serial_test_rx_frame[8] == 0x00U) &&
+        (serial_test_rx_frame[9] == 0x00U) &&
+        (serial_test_rx_frame[10] == 0x00U) &&
+        (serial_test_rx_frame[11] == 0x00U) &&
+        (serial_test_rx_frame[12] == 0xAAU) &&
+        (serial_test_rx_frame[13] == 0xAAU);
+
+    if (serial_test_last_frame_ok != 0U)
+    {
+      serial_test_command_count++;
+      serial_test_last_response_ok =
+          (HAL_UART_Transmit(&huart3, (uint8_t *)response,
+                             SERIAL_TEST_FRAME_SIZE, 100U) == HAL_OK);
+    }
+    else
+    {
+      serial_test_frame_error_count++;
+      serial_test_last_response_ok = 0U;
+    }
+  }
+}
 
 /* USER CODE END 0 */
 
@@ -174,6 +255,7 @@ int main(void)
   HAL_GPIO_WritePin(Z_DIR_GPIO_Port, Z_DIR_Pin, GPIO_PIN_RESET);
   limit_gpio_poll_tick = HAL_GetTick();
   x_tmc5160_spi_test_pending = 0U;
+  serial_test_build_marker = 0x20260826U;
   /*
   auxiliary_output_test_tick = HAL_GetTick();
   */
@@ -186,6 +268,7 @@ int main(void)
     /* USER CODE END WHILE */
     LED_Task();
     /* USER CODE BEGIN 3 */
+    Serial_Test_Task();
     if ((HAL_GetTick() - limit_gpio_poll_tick) >=
         LIMIT_GPIO_POLL_PERIOD_MS)
     {
