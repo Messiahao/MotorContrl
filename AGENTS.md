@@ -56,6 +56,23 @@ test performed. Include serial logs or screenshots for observable behavior
 when useful, and never commit generated object, listing, or IDE user files
 unless the change requires them.
 
+## Archive and GitHub Publishing Protocol
+
+When the user says “代码归档” (archive the code), treat it as a complete
+release operation, even across new chats in this repository:
+
+1. Confirm the relevant build and on-target verification result.
+2. Copy the matching HEX image to `firmware_releases/` when one exists.
+3. Update the project version notes with the change from the previous version,
+   the current version's function, and its verification status.
+4. Create a focused Git commit and version tag, preserving earlier tags.
+5. Push the commit/history, tag, HEX archive, and version notes to the configured
+   GitHub remote.
+
+Do not tag or publish unverified work as a release. If the GitHub remote or
+authentication is unavailable, report that explicitly and do not claim the
+archive is complete. Keep unrelated uncommitted work out of the release.
+
 
 ## Hardware Schematic Memory (Project Knowledge Base)
 
