@@ -40,6 +40,26 @@
 #define LIMIT_GPIO_STATIC_TEST 0U
 #define LIMIT_GPIO_POLL_PERIOD_MS 10U
 #define SERIAL_TEST_FRAME_SIZE 14U
+#define SERIAL_PROTOCOL_STAGE1_TEST 1U
+#define SERIAL_MOTION_MIN_SPEED_HZ 1000U
+#define SERIAL_MOTION_MAX_SPEED_HZ 10000U
+#define SERIAL_MOTION_MAX_DISTANCE_STEPS 12000U
+#define SERIAL_MOTION_MAX_TIME_SECONDS 5U
+#define SERIAL_MOTION_ERROR_NONE 0U
+#define SERIAL_MOTION_ERROR_FRAME 1U
+#define SERIAL_MOTION_ERROR_AXIS 2U
+#define SERIAL_MOTION_ERROR_DIRECTION 3U
+#define SERIAL_MOTION_ERROR_SPEED 4U
+#define SERIAL_MOTION_ERROR_DISTANCE 5U
+#define SERIAL_MOTION_ERROR_TIME 6U
+#define SERIAL_MOTION_ERROR_BUSY 7U
+#define SERIAL_MOTION_ERROR_TMC 8U
+#define SERIAL_MOTION_ERROR_TIMER 9U
+#define SERIAL_MOTION_STATE_IDLE 0U
+#define SERIAL_MOTION_STATE_PENDING 1U
+#define SERIAL_MOTION_STATE_ACTIVE 2U
+#define SERIAL_MOTION_STATE_DONE 3U
+#define SERIAL_MOTION_STATE_ERROR 4U
 #define X_MOTION_TEST_DURATION_MS 1200U
 #define X_MOTION_TEST_DISABLE_DELAY_MS 6000U
 #define X_MOTION_IHOLD 0U
@@ -126,6 +146,33 @@ volatile uint8_t serial_test_last_rx_byte;
 volatile uint8_t serial_test_last_frame_ok;
 volatile uint8_t serial_test_last_response_ok;
 volatile uint32_t serial_test_build_marker;
+volatile uint32_t serial_motion_command_count;
+volatile uint8_t serial_motion_last_axis;
+volatile uint8_t serial_motion_last_direction;
+volatile uint16_t serial_motion_last_speed_hz;
+volatile uint32_t serial_motion_last_distance_steps;
+volatile uint8_t serial_motion_last_frame_ok;
+volatile uint8_t serial_motion_last_response_ok;
+volatile uint8_t serial_motion_error_code;
+volatile uint8_t serial_motion_busy;
+volatile uint8_t serial_motion_command_pending;
+volatile uint8_t serial_motion_active;
+volatile uint8_t serial_motion_done;
+volatile uint8_t serial_motion_state;
+volatile uint8_t serial_motion_start_ok;
+volatile uint32_t serial_motion_pulses_done;
+volatile uint32_t serial_motion_target_steps;
+volatile uint8_t serial_motion_target_axis;
+volatile uint8_t serial_motion_target_direction;
+volatile uint16_t serial_motion_target_speed_hz;
+volatile uint32_t serial_motion_target_distance_steps;
+volatile uint8_t serial_motion_last_completion_status;
+volatile uint8_t serial_motion_last_completion_error_code;
+volatile uint8_t serial_motion_last_completion_response_ok;
+volatile uint32_t serial_motion_mscnt_before;
+volatile uint32_t serial_motion_mscnt_after;
+volatile uint16_t serial_motion_mscnt_delta;
+volatile uint8_t serial_motion_mscnt_ok;
 /*
 static uint32_t auxiliary_output_test_tick;
 static uint8_t auxiliary_output_test_state;
@@ -136,6 +183,10 @@ static uint8_t auxiliary_output_test_state;
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 static void Serial_Test_Task(void);
+static void Serial_Motion_Task(void);
+static uint8_t Serial_Motion_PrepareAndStart(void);
+static uint8_t Serial_Motion_SendResponse(uint8_t status, uint8_t error_code);
+void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim);
 
 /* USER CODE END PFP */
 
@@ -144,6 +195,12 @@ static void Serial_Test_Task(void);
 static void Serial_Test_Task(void)
 {
   uint8_t byte;
+  uint8_t i;
+  uint8_t motion_frame_ok;
+  uint8_t motion_error_code;
+  uint16_t motion_speed_hz;
+  uint32_t motion_distance_steps;
+  uint8_t motion_response[SERIAL_TEST_FRAME_SIZE];
   static const uint8_t response[SERIAL_TEST_FRAME_SIZE] = {
     0xAAU, 0xAAU, 0x01U, 0x00U,
     0x00U, 0x00U, 0x00U, 0x00U,
@@ -203,10 +260,333 @@ static void Serial_Test_Task(void)
           (HAL_UART_Transmit(&huart3, (uint8_t *)response,
                              SERIAL_TEST_FRAME_SIZE, 100U) == HAL_OK);
     }
+    else if ((serial_test_rx_frame[2] == 0x02U) &&
+             (serial_test_rx_frame[3] == 0x00U))
+    {
+      serial_test_last_frame_ok = 0U;
+      serial_motion_command_count++;
+      serial_motion_last_axis = serial_test_rx_frame[4];
+      serial_motion_last_direction = serial_test_rx_frame[5];
+      motion_speed_hz = (uint16_t)(((uint16_t)serial_test_rx_frame[6] << 8) |
+                                   serial_test_rx_frame[7]);
+      motion_distance_steps = ((uint32_t)serial_test_rx_frame[8] << 24) |
+                              ((uint32_t)serial_test_rx_frame[9] << 16) |
+                              ((uint32_t)serial_test_rx_frame[10] << 8) |
+                              (uint32_t)serial_test_rx_frame[11];
+      serial_motion_last_speed_hz = motion_speed_hz;
+      serial_motion_last_distance_steps = motion_distance_steps;
+
+      motion_frame_ok =
+          (serial_test_rx_frame[12] == 0xAAU) &&
+          (serial_test_rx_frame[13] == 0xAAU);
+      motion_error_code = SERIAL_MOTION_ERROR_NONE;
+      if (motion_frame_ok == 0U)
+      {
+        motion_error_code = SERIAL_MOTION_ERROR_FRAME;
+      }
+      else if (serial_motion_last_axis != 0x01U)
+      {
+        motion_error_code = SERIAL_MOTION_ERROR_AXIS;
+      }
+      else if (serial_motion_last_direction > 0x01U)
+      {
+        motion_error_code = SERIAL_MOTION_ERROR_DIRECTION;
+      }
+      else if ((motion_speed_hz < SERIAL_MOTION_MIN_SPEED_HZ) ||
+               (motion_speed_hz > SERIAL_MOTION_MAX_SPEED_HZ))
+      {
+        motion_error_code = SERIAL_MOTION_ERROR_SPEED;
+      }
+      else if ((motion_distance_steps == 0U) ||
+               (motion_distance_steps > SERIAL_MOTION_MAX_DISTANCE_STEPS))
+      {
+        motion_error_code = SERIAL_MOTION_ERROR_DISTANCE;
+      }
+      else if (motion_distance_steps >
+               ((uint32_t)motion_speed_hz * SERIAL_MOTION_MAX_TIME_SECONDS))
+      {
+        motion_error_code = SERIAL_MOTION_ERROR_TIME;
+      }
+      else if (serial_motion_busy != 0U)
+      {
+        motion_error_code = SERIAL_MOTION_ERROR_BUSY;
+      }
+
+      serial_motion_error_code = motion_error_code;
+      serial_motion_last_frame_ok = (motion_error_code ==
+                                     SERIAL_MOTION_ERROR_NONE);
+      if (serial_motion_last_frame_ok != 0U)
+      {
+        serial_motion_target_axis = serial_motion_last_axis;
+        serial_motion_target_direction = serial_motion_last_direction;
+        serial_motion_target_speed_hz = motion_speed_hz;
+        serial_motion_target_distance_steps = motion_distance_steps;
+        serial_motion_target_steps = motion_distance_steps;
+        serial_motion_pulses_done = 0U;
+        serial_motion_command_pending = 1U;
+        serial_motion_busy = 1U;
+        serial_motion_state = SERIAL_MOTION_STATE_PENDING;
+      }
+      motion_response[0] = 0xAAU;
+      motion_response[1] = 0xAAU;
+      motion_response[2] = 0x02U;
+      motion_response[3] = (serial_motion_last_frame_ok != 0U) ?
+                           0x00U : 0xFFU;
+      if (serial_motion_last_frame_ok != 0U)
+      {
+        for (i = 0U; i < 8U; i++)
+        {
+          motion_response[4U + i] = serial_test_rx_frame[4U + i];
+        }
+      }
+      else
+      {
+        motion_response[4] = motion_error_code;
+        for (i = 5U; i < 12U; i++)
+        {
+          motion_response[i] = 0U;
+        }
+        serial_test_frame_error_count++;
+      }
+      motion_response[12] = 0x55U;
+      motion_response[13] = 0x55U;
+      serial_motion_last_response_ok =
+          (HAL_UART_Transmit(&huart3, motion_response,
+                             SERIAL_TEST_FRAME_SIZE, 100U) == HAL_OK);
+      serial_test_last_response_ok = serial_motion_last_response_ok;
+    }
     else
     {
+      serial_test_last_frame_ok = 0U;
       serial_test_frame_error_count++;
       serial_test_last_response_ok = 0U;
+    }
+  }
+}
+
+static uint8_t Serial_Motion_SendResponse(uint8_t status, uint8_t error_code)
+{
+  uint8_t i;
+  uint8_t response[SERIAL_TEST_FRAME_SIZE];
+
+  response[0] = 0xAAU;
+  response[1] = 0xAAU;
+  response[2] = 0x02U;
+  response[3] = status;
+  if ((status == 0x00U) || (status == 0x01U))
+  {
+    response[4] = serial_motion_target_axis;
+    response[5] = serial_motion_target_direction;
+    response[6] = (uint8_t)(serial_motion_target_speed_hz >> 8);
+    response[7] = (uint8_t)serial_motion_target_speed_hz;
+    response[8] = (uint8_t)(serial_motion_target_distance_steps >> 24);
+    response[9] = (uint8_t)(serial_motion_target_distance_steps >> 16);
+    response[10] = (uint8_t)(serial_motion_target_distance_steps >> 8);
+    response[11] = (uint8_t)serial_motion_target_distance_steps;
+  }
+  else
+  {
+    response[4] = error_code;
+    for (i = 5U; i < 12U; i++)
+    {
+      response[i] = 0U;
+    }
+  }
+  response[12] = 0x55U;
+  response[13] = 0x55U;
+
+  return (HAL_UART_Transmit(&huart3, response,
+                            SERIAL_TEST_FRAME_SIZE, 100U) == HAL_OK);
+}
+
+static uint8_t Serial_Motion_PrepareAndStart(void)
+{
+  uint32_t expected_chopconf;
+  uint32_t period_ticks;
+  GPIO_InitTypeDef x_step_gpio = {0};
+
+  TMC5160_DISABLE(&x_tmc5160);
+  x_tmc5160_ioin = TMC5160_ReadRegister(&x_tmc5160, TMC5160_IOIN);
+  x_tmc5160_spi_ok = ((x_tmc5160_ioin >> 24) == 0x30U);
+  x_tmc5160_spi_test_done = 1U;
+  if (x_tmc5160_spi_ok == 0U)
+  {
+    return SERIAL_MOTION_ERROR_TMC;
+  }
+
+  TMC5160_WriteRegister(&x_tmc5160, TMC5160_GCONF,
+                        TMC5160_GCONF_INIT);
+  x_tmc5160_gconf = TMC5160_ReadRegister(&x_tmc5160, TMC5160_GCONF);
+  x_tmc5160_gconf_ok = (x_tmc5160_gconf == TMC5160_GCONF_INIT);
+  x_tmc5160_gconf_test_done = 1U;
+  if (x_tmc5160_gconf_ok == 0U)
+  {
+    return SERIAL_MOTION_ERROR_TMC;
+  }
+
+  x_tmc5160_gstat = TMC5160_ReadRegister(&x_tmc5160, TMC5160_GSTAT);
+  x_tmc5160_gstat_test_done = 1U;
+  TMC5160_WriteRegister(&x_tmc5160, TMC5160_GSTAT,
+                        TMC5160_GSTAT_INIT);
+  HAL_Delay(100U);
+  x_tmc5160_gstat_after_clear =
+      TMC5160_ReadRegister(&x_tmc5160, TMC5160_GSTAT);
+  x_tmc5160_gstat_uv_cp_clear_ok =
+      ((x_tmc5160_gstat_after_clear & TMC5160_GSTAT_UV_CP) == 0U);
+  x_tmc5160_gstat_clear_test_done = 1U;
+  if (x_tmc5160_gstat_uv_cp_clear_ok == 0U)
+  {
+    return SERIAL_MOTION_ERROR_TMC;
+  }
+
+  x_tmc5160_chopconf =
+      TMC5160_ReadRegister(&x_tmc5160, TMC5160_CHOPCONF);
+  x_tmc5160_static_read_test_done = 1U;
+  TMC5160_WriteRegister(&x_tmc5160, TMC5160_IHOLD_IRUN,
+                        TMC5160_IHOLD(X_MOTION_IHOLD) |
+                        TMC5160_IRUN(X_MOTION_IRUN));
+  expected_chopconf = (x_tmc5160_chopconf & ~TMC5160_TOFF_MASK) |
+                      TMC5160_TOFF(3U);
+  TMC5160_WriteRegister(&x_tmc5160, TMC5160_CHOPCONF,
+                        expected_chopconf);
+  x_tmc5160_chopconf_configured =
+      TMC5160_ReadRegister(&x_tmc5160, TMC5160_CHOPCONF);
+  x_tmc5160_low_current_config_ok =
+      (x_tmc5160_chopconf_configured == expected_chopconf);
+  x_tmc5160_low_current_config_test_done = 1U;
+  if (x_tmc5160_low_current_config_ok == 0U)
+  {
+    return SERIAL_MOTION_ERROR_TMC;
+  }
+
+  TMC5160_ENABLE(&x_tmc5160);
+  x_tmc5160_enable_test_active = 1U;
+  HAL_Delay(200U);
+  x_tmc5160_gstat_enabled =
+      TMC5160_ReadRegister(&x_tmc5160, TMC5160_GSTAT);
+  x_tmc5160_drv_status_enabled =
+      TMC5160_ReadRegister(&x_tmc5160, TMC5160_DRV_STATUS);
+  x_tmc5160_enable_test_ok =
+      ((x_tmc5160_gstat_enabled &
+        (TMC5160_GSTAT_DRV_ERR | TMC5160_GSTAT_UV_CP)) == 0U);
+  x_tmc5160_enable_test_done = 1U;
+  if (x_tmc5160_enable_test_ok == 0U)
+  {
+    TMC5160_DISABLE(&x_tmc5160);
+    x_tmc5160_enable_test_active = 0U;
+    return SERIAL_MOTION_ERROR_TMC;
+  }
+
+  HAL_GPIO_WritePin(X_DIR_GPIO_Port, X_DIR_Pin,
+                    (serial_motion_target_direction != 0U) ?
+                    GPIO_PIN_SET : GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(X_STEP_GPIO_Port, X_STEP_Pin, GPIO_PIN_RESET);
+  HAL_Delay(1U);
+  x_step_gpio.Pin = X_STEP_Pin;
+  x_step_gpio.Mode = GPIO_MODE_AF_PP;
+  x_step_gpio.Pull = GPIO_NOPULL;
+  x_step_gpio.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(X_STEP_GPIO_Port, &x_step_gpio);
+  HAL_GPIO_WritePin(X_STEP_GPIO_Port, X_STEP_Pin, GPIO_PIN_RESET);
+  serial_motion_mscnt_before =
+      TMC5160_ReadRegister(&x_tmc5160, TMC5160_MSCNT);
+  serial_motion_mscnt_ok = 0U;
+  period_ticks = 1000000U / serial_motion_target_speed_hz;
+  if ((period_ticks < 2U) || (period_ticks > 65535U))
+  {
+    TMC5160_DISABLE(&x_tmc5160);
+    x_tmc5160_enable_test_active = 0U;
+    return SERIAL_MOTION_ERROR_TIMER;
+  }
+  __HAL_TIM_SET_AUTORELOAD(&htim2, period_ticks - 1U);
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, period_ticks / 2U);
+  __HAL_TIM_SET_COUNTER(&htim2, 0U);
+  __HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_CC2 | TIM_FLAG_UPDATE);
+  HAL_NVIC_SetPriority(TIM2_IRQn, 2U, 0U);
+  HAL_NVIC_ClearPendingIRQ(TIM2_IRQn);
+  HAL_NVIC_EnableIRQ(TIM2_IRQn);
+  serial_motion_pulses_done = 0U;
+  serial_motion_active = 1U;
+  if (HAL_TIM_PWM_Start_IT(&htim2, TIM_CHANNEL_2) != HAL_OK)
+  {
+    serial_motion_active = 0U;
+    TMC5160_DISABLE(&x_tmc5160);
+    x_tmc5160_enable_test_active = 0U;
+    return SERIAL_MOTION_ERROR_TIMER;
+  }
+  serial_motion_state = SERIAL_MOTION_STATE_ACTIVE;
+  serial_motion_start_ok = 1U;
+  return SERIAL_MOTION_ERROR_NONE;
+}
+
+static void Serial_Motion_Task(void)
+{
+  uint8_t start_error_code;
+  GPIO_InitTypeDef x_step_gpio = {0};
+
+  if ((serial_motion_command_pending != 0U) &&
+      (serial_motion_active == 0U))
+  {
+    serial_motion_command_pending = 0U;
+    serial_motion_start_ok = 0U;
+    start_error_code = Serial_Motion_PrepareAndStart();
+    if (start_error_code != SERIAL_MOTION_ERROR_NONE)
+    {
+      serial_motion_error_code = start_error_code;
+      serial_motion_busy = 0U;
+      serial_motion_state = SERIAL_MOTION_STATE_ERROR;
+      serial_motion_last_completion_status = 0xFFU;
+      serial_motion_last_completion_error_code = start_error_code;
+      serial_motion_last_completion_response_ok =
+          Serial_Motion_SendResponse(0xFFU, start_error_code);
+      serial_test_last_response_ok =
+          serial_motion_last_completion_response_ok;
+    }
+  }
+
+  if (serial_motion_done != 0U)
+  {
+    serial_motion_done = 0U;
+    x_step_gpio.Pin = X_STEP_Pin;
+    x_step_gpio.Mode = GPIO_MODE_OUTPUT_PP;
+    x_step_gpio.Pull = GPIO_NOPULL;
+    x_step_gpio.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(X_STEP_GPIO_Port, &x_step_gpio);
+    HAL_GPIO_WritePin(X_STEP_GPIO_Port, X_STEP_Pin, GPIO_PIN_RESET);
+    serial_motion_mscnt_after =
+        TMC5160_ReadRegister(&x_tmc5160, TMC5160_MSCNT);
+    serial_motion_mscnt_delta =
+        (uint16_t)((serial_motion_mscnt_after -
+                    serial_motion_mscnt_before) & 0x03FFU);
+    serial_motion_mscnt_ok =
+        ((serial_motion_mscnt_delta ==
+          (serial_motion_target_steps & 0x03FFU)) ||
+         (serial_motion_mscnt_delta ==
+          ((0x0400U - (serial_motion_target_steps & 0x03FFU)) &
+           0x03FFU)));
+    TMC5160_DISABLE(&x_tmc5160);
+    x_tmc5160_enable_test_active = 0U;
+    serial_motion_busy = 0U;
+    serial_motion_state = SERIAL_MOTION_STATE_DONE;
+    serial_motion_error_code = SERIAL_MOTION_ERROR_NONE;
+    serial_motion_last_completion_status = 0x01U;
+    serial_motion_last_completion_error_code = SERIAL_MOTION_ERROR_NONE;
+    serial_motion_last_completion_response_ok =
+        Serial_Motion_SendResponse(0x01U, SERIAL_MOTION_ERROR_NONE);
+    serial_test_last_response_ok = serial_motion_last_completion_response_ok;
+  }
+}
+
+void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
+{
+  if ((htim->Instance == TIM2) && (serial_motion_active != 0U))
+  {
+    serial_motion_pulses_done++;
+    if (serial_motion_pulses_done >= serial_motion_target_steps)
+    {
+      HAL_TIM_PWM_Stop_IT(htim, TIM_CHANNEL_2);
+      serial_motion_active = 0U;
+      serial_motion_done = 1U;
     }
   }
 }
@@ -273,6 +653,7 @@ int main(void)
     LED_Task();
     /* USER CODE BEGIN 3 */
     Serial_Test_Task();
+    Serial_Motion_Task();
     if ((HAL_GetTick() - limit_gpio_poll_tick) >=
         LIMIT_GPIO_POLL_PERIOD_MS)
     {
@@ -307,7 +688,7 @@ int main(void)
       if (limit_pa10_level == GPIO_PIN_RESET) limit_active_mask |= (1U << 8);
       limit_gpio_sample_valid = 1U;
     }
-#if !LIMIT_GPIO_STATIC_TEST
+#if !LIMIT_GPIO_STATIC_TEST && !SERIAL_PROTOCOL_STAGE1_TEST
     if ((x_tmc5160_spi_test_pending != 0U) &&
         ((HAL_GetTick() - x_tmc5160_spi_test_tick) >= 100U))
     {
