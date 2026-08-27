@@ -57,6 +57,10 @@
 #define SERIAL_MOTION_ERROR_TIMER 9U
 #define SERIAL_MOTION_ERROR_NOT_ACTIVE 10U
 #define SERIAL_MOTION_ERROR_LIMIT 11U
+#define SERIAL_AUX_ERROR_NONE 0U
+#define SERIAL_AUX_ERROR_FRAME 1U
+#define SERIAL_AUX_ERROR_ACTION 2U
+#define SERIAL_AUX_ERROR_DATA 3U
 #define SERIAL_MOTION_STATE_IDLE 0U
 #define SERIAL_MOTION_STATE_PENDING 1U
 #define SERIAL_MOTION_STATE_ACTIVE 2U
@@ -175,6 +179,16 @@ volatile uint32_t serial_motion_status_query_count;
 volatile uint8_t serial_motion_last_status_response_ok;
 volatile uint16_t serial_motion_last_limit_mask;
 volatile uint8_t serial_motion_last_limit_response_ok;
+volatile uint32_t serial_relay_command_count;
+volatile uint8_t serial_relay_state;
+volatile uint8_t serial_relay_last_frame_ok;
+volatile uint8_t serial_relay_last_response_ok;
+volatile uint8_t serial_relay_error_code;
+volatile uint32_t serial_brake_command_count;
+volatile uint8_t serial_brake_state;
+volatile uint8_t serial_brake_last_frame_ok;
+volatile uint8_t serial_brake_last_response_ok;
+volatile uint8_t serial_brake_error_code;
 volatile uint32_t serial_motion_pulses_done;
 volatile uint32_t serial_motion_target_steps;
 volatile uint8_t serial_motion_target_axis;
@@ -203,6 +217,8 @@ static uint8_t Serial_Motion_PrepareAndStart(void);
 static uint8_t Serial_Motion_SendResponse(uint8_t status, uint8_t error_code);
 static uint8_t Serial_Motion_SendStatusResponse(void);
 static uint16_t Serial_Motion_ReadXLimitMask(void);
+static uint8_t Serial_Aux_SendResponse(uint8_t command_code,
+                                       uint8_t action_code);
 void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim);
 
 /* USER CODE END PFP */
@@ -216,6 +232,10 @@ static void Serial_Test_Task(void)
   uint8_t motion_frame_ok;
   uint8_t motion_continuous;
   uint8_t motion_error_code;
+  uint8_t aux_command_code;
+  uint8_t aux_action_code;
+  uint8_t aux_frame_ok;
+  uint8_t aux_data_ok;
   uint16_t motion_speed_hz;
   uint32_t motion_distance_steps;
   uint8_t motion_response[SERIAL_TEST_FRAME_SIZE];
@@ -443,6 +463,100 @@ static void Serial_Test_Task(void)
       }
       serial_test_last_response_ok = serial_motion_last_status_response_ok;
     }
+    else if (((serial_test_rx_frame[2] == 0x03U) &&
+              (serial_test_rx_frame[3] == 0x00U)) ||
+             ((serial_test_rx_frame[2] == 0x04U) &&
+              (serial_test_rx_frame[3] == 0x00U)))
+    {
+      serial_test_last_frame_ok = 0U;
+      aux_command_code = serial_test_rx_frame[2];
+      aux_action_code = serial_test_rx_frame[4];
+      aux_frame_ok = (serial_test_rx_frame[12] == 0xAAU) &&
+                     (serial_test_rx_frame[13] == 0xAAU);
+      aux_data_ok = (serial_test_rx_frame[5] == 0x00U) &&
+                    (serial_test_rx_frame[6] == 0x00U) &&
+                    (serial_test_rx_frame[7] == 0x00U) &&
+                    (serial_test_rx_frame[8] == 0x00U) &&
+                    (serial_test_rx_frame[9] == 0x00U) &&
+                    (serial_test_rx_frame[10] == 0x00U) &&
+                    (serial_test_rx_frame[11] == 0x00U);
+      if (aux_command_code == 0x03U)
+      {
+        serial_relay_command_count++;
+        serial_relay_last_frame_ok = aux_frame_ok && aux_data_ok &&
+                                      ((aux_action_code == 0x01U) ||
+                                       (aux_action_code == 0x02U));
+        if (aux_frame_ok == 0U)
+        {
+          serial_relay_error_code = SERIAL_AUX_ERROR_FRAME;
+        }
+        else if (aux_data_ok == 0U)
+        {
+          serial_relay_error_code = SERIAL_AUX_ERROR_DATA;
+        }
+        else if (serial_relay_last_frame_ok == 0U)
+        {
+          serial_relay_error_code = SERIAL_AUX_ERROR_ACTION;
+        }
+        else
+        {
+          serial_relay_error_code = SERIAL_AUX_ERROR_NONE;
+        }
+        if (serial_relay_last_frame_ok != 0U)
+        {
+          HAL_GPIO_WritePin(VOUT_5_GPIO_Port, VOUT_5_Pin,
+                            (aux_action_code == 0x01U) ?
+                            GPIO_PIN_SET : GPIO_PIN_RESET);
+          serial_relay_state = (aux_action_code == 0x01U) ? 1U : 0U;
+          serial_relay_last_response_ok =
+              Serial_Aux_SendResponse(aux_command_code, aux_action_code);
+        }
+        else
+        {
+          serial_relay_last_response_ok = 0U;
+          serial_test_frame_error_count++;
+        }
+        serial_test_last_response_ok = serial_relay_last_response_ok;
+      }
+      else
+      {
+        serial_brake_command_count++;
+        serial_brake_last_frame_ok = aux_frame_ok && aux_data_ok &&
+                                     ((aux_action_code == 0x01U) ||
+                                      (aux_action_code == 0x02U));
+        if (aux_frame_ok == 0U)
+        {
+          serial_brake_error_code = SERIAL_AUX_ERROR_FRAME;
+        }
+        else if (aux_data_ok == 0U)
+        {
+          serial_brake_error_code = SERIAL_AUX_ERROR_DATA;
+        }
+        else if (serial_brake_last_frame_ok == 0U)
+        {
+          serial_brake_error_code = SERIAL_AUX_ERROR_ACTION;
+        }
+        else
+        {
+          serial_brake_error_code = SERIAL_AUX_ERROR_NONE;
+        }
+        if (serial_brake_last_frame_ok != 0U)
+        {
+          HAL_GPIO_WritePin(VOUT_24_GPIO_Port, VOUT_24_Pin,
+                            (aux_action_code == 0x01U) ?
+                            GPIO_PIN_SET : GPIO_PIN_RESET);
+          serial_brake_state = (aux_action_code == 0x01U) ? 1U : 0U;
+          serial_brake_last_response_ok =
+              Serial_Aux_SendResponse(aux_command_code, aux_action_code);
+        }
+        else
+        {
+          serial_brake_last_response_ok = 0U;
+          serial_test_frame_error_count++;
+        }
+        serial_test_last_response_ok = serial_brake_last_response_ok;
+      }
+    }
     else
     {
       serial_test_last_frame_ok = 0U;
@@ -505,6 +619,20 @@ static uint8_t Serial_Motion_SendStatusResponse(void)
   response[11] = (uint8_t)serial_motion_pulses_done;
   response[12] = 0x55U;
   response[13] = 0x55U;
+
+  return (HAL_UART_Transmit(&huart3, response,
+                            SERIAL_TEST_FRAME_SIZE, 100U) == HAL_OK);
+}
+
+static uint8_t Serial_Aux_SendResponse(uint8_t command_code,
+                                       uint8_t action_code)
+{
+  uint8_t response[SERIAL_TEST_FRAME_SIZE] = {
+    0xAAU, 0xAAU, command_code, 0x00U,
+    action_code, 0x00U, 0x00U, 0x00U,
+    0x00U, 0x00U, 0x00U, 0x00U,
+    0x55U, 0x55U
+  };
 
   return (HAL_UART_Transmit(&huart3, response,
                             SERIAL_TEST_FRAME_SIZE, 100U) == HAL_OK);
