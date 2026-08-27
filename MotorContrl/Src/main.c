@@ -55,11 +55,17 @@
 #define SERIAL_MOTION_ERROR_BUSY 7U
 #define SERIAL_MOTION_ERROR_TMC 8U
 #define SERIAL_MOTION_ERROR_TIMER 9U
+#define SERIAL_MOTION_ERROR_NOT_ACTIVE 10U
+#define SERIAL_MOTION_ERROR_LIMIT 11U
 #define SERIAL_MOTION_STATE_IDLE 0U
 #define SERIAL_MOTION_STATE_PENDING 1U
 #define SERIAL_MOTION_STATE_ACTIVE 2U
 #define SERIAL_MOTION_STATE_DONE 3U
 #define SERIAL_MOTION_STATE_ERROR 4U
+#define SERIAL_MOTION_STATE_STOPPED 5U
+#define SERIAL_MOTION_STATE_LIMIT_STOPPED 6U
+#define SERIAL_MOTION_VALIDATION_COMMAND_ENABLED 1U
+#define X_LIMIT_ACTIVE_MASK 0x0007U
 #define X_MOTION_TEST_DURATION_MS 1200U
 #define X_MOTION_TEST_DISABLE_DELAY_MS 6000U
 #define X_MOTION_IHOLD 0U
@@ -160,6 +166,15 @@ volatile uint8_t serial_motion_active;
 volatile uint8_t serial_motion_done;
 volatile uint8_t serial_motion_state;
 volatile uint8_t serial_motion_start_ok;
+volatile uint8_t serial_motion_continuous;
+volatile uint8_t serial_motion_stop_pending;
+volatile uint8_t serial_motion_limit_pending;
+volatile uint32_t serial_motion_stop_command_count;
+volatile uint32_t serial_motion_limit_stop_count;
+volatile uint32_t serial_motion_status_query_count;
+volatile uint8_t serial_motion_last_status_response_ok;
+volatile uint16_t serial_motion_last_limit_mask;
+volatile uint8_t serial_motion_last_limit_response_ok;
 volatile uint32_t serial_motion_pulses_done;
 volatile uint32_t serial_motion_target_steps;
 volatile uint8_t serial_motion_target_axis;
@@ -186,6 +201,8 @@ static void Serial_Test_Task(void);
 static void Serial_Motion_Task(void);
 static uint8_t Serial_Motion_PrepareAndStart(void);
 static uint8_t Serial_Motion_SendResponse(uint8_t status, uint8_t error_code);
+static uint8_t Serial_Motion_SendStatusResponse(void);
+static uint16_t Serial_Motion_ReadXLimitMask(void);
 void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim);
 
 /* USER CODE END PFP */
@@ -197,6 +214,7 @@ static void Serial_Test_Task(void)
   uint8_t byte;
   uint8_t i;
   uint8_t motion_frame_ok;
+  uint8_t motion_continuous;
   uint8_t motion_error_code;
   uint16_t motion_speed_hz;
   uint32_t motion_distance_steps;
@@ -260,8 +278,10 @@ static void Serial_Test_Task(void)
           (HAL_UART_Transmit(&huart3, (uint8_t *)response,
                              SERIAL_TEST_FRAME_SIZE, 100U) == HAL_OK);
     }
-    else if ((serial_test_rx_frame[2] == 0x02U) &&
-             (serial_test_rx_frame[3] == 0x00U))
+    else if (((serial_test_rx_frame[2] == 0x02U) &&
+              (serial_test_rx_frame[3] == 0x00U)) ||
+             ((serial_test_rx_frame[2] == 0x02U) &&
+              (serial_test_rx_frame[3] == 0xF0U)))
     {
       serial_test_last_frame_ok = 0U;
       serial_motion_command_count++;
@@ -269,10 +289,19 @@ static void Serial_Test_Task(void)
       serial_motion_last_direction = serial_test_rx_frame[5];
       motion_speed_hz = (uint16_t)(((uint16_t)serial_test_rx_frame[6] << 8) |
                                    serial_test_rx_frame[7]);
-      motion_distance_steps = ((uint32_t)serial_test_rx_frame[8] << 24) |
-                              ((uint32_t)serial_test_rx_frame[9] << 16) |
-                              ((uint32_t)serial_test_rx_frame[10] << 8) |
-                              (uint32_t)serial_test_rx_frame[11];
+      motion_continuous = (serial_test_rx_frame[3] == 0xF0U) &&
+                          (SERIAL_MOTION_VALIDATION_COMMAND_ENABLED != 0U);
+      if (motion_continuous != 0U)
+      {
+        motion_distance_steps = 0U;
+      }
+      else
+      {
+        motion_distance_steps = ((uint32_t)serial_test_rx_frame[8] << 24) |
+                                ((uint32_t)serial_test_rx_frame[9] << 16) |
+                                ((uint32_t)serial_test_rx_frame[10] << 8) |
+                                (uint32_t)serial_test_rx_frame[11];
+      }
       serial_motion_last_speed_hz = motion_speed_hz;
       serial_motion_last_distance_steps = motion_distance_steps;
 
@@ -297,13 +326,17 @@ static void Serial_Test_Task(void)
       {
         motion_error_code = SERIAL_MOTION_ERROR_SPEED;
       }
-      else if ((motion_distance_steps == 0U) ||
+      else if ((motion_continuous == 0U) &&
+               ((motion_distance_steps == 0U) ||
                (motion_distance_steps > SERIAL_MOTION_MAX_DISTANCE_STEPS))
+              )
       {
         motion_error_code = SERIAL_MOTION_ERROR_DISTANCE;
       }
-      else if (motion_distance_steps >
+      else if ((motion_continuous == 0U) &&
+               (motion_distance_steps >
                ((uint32_t)motion_speed_hz * SERIAL_MOTION_MAX_TIME_SECONDS))
+              )
       {
         motion_error_code = SERIAL_MOTION_ERROR_TIME;
       }
@@ -321,11 +354,15 @@ static void Serial_Test_Task(void)
         serial_motion_target_direction = serial_motion_last_direction;
         serial_motion_target_speed_hz = motion_speed_hz;
         serial_motion_target_distance_steps = motion_distance_steps;
-        serial_motion_target_steps = motion_distance_steps;
+        serial_motion_target_steps = (motion_continuous != 0U) ?
+                                     0U : motion_distance_steps;
+        serial_motion_continuous = motion_continuous;
         serial_motion_pulses_done = 0U;
         serial_motion_command_pending = 1U;
         serial_motion_busy = 1U;
         serial_motion_state = SERIAL_MOTION_STATE_PENDING;
+        serial_motion_stop_pending = 0U;
+        serial_motion_limit_pending = 0U;
       }
       motion_response[0] = 0xAAU;
       motion_response[1] = 0xAAU;
@@ -355,6 +392,57 @@ static void Serial_Test_Task(void)
                              SERIAL_TEST_FRAME_SIZE, 100U) == HAL_OK);
       serial_test_last_response_ok = serial_motion_last_response_ok;
     }
+    else if ((serial_test_rx_frame[2] == 0x02U) &&
+             (serial_test_rx_frame[3] == 0x02U))
+    {
+      serial_test_last_frame_ok = 0U;
+      serial_motion_stop_command_count++;
+      if ((serial_test_rx_frame[12] != 0xAAU) ||
+          (serial_test_rx_frame[13] != 0xAAU))
+      {
+        serial_motion_error_code = SERIAL_MOTION_ERROR_FRAME;
+        serial_motion_last_response_ok =
+            Serial_Motion_SendResponse(0xFFU, SERIAL_MOTION_ERROR_FRAME);
+      }
+      else if (serial_test_rx_frame[4] != 0x01U)
+      {
+        serial_motion_error_code = SERIAL_MOTION_ERROR_AXIS;
+        serial_motion_last_response_ok =
+            Serial_Motion_SendResponse(0xFFU, SERIAL_MOTION_ERROR_AXIS);
+      }
+      else if (serial_motion_busy == 0U)
+      {
+        serial_motion_error_code = SERIAL_MOTION_ERROR_NOT_ACTIVE;
+        serial_motion_last_response_ok =
+            Serial_Motion_SendResponse(0xFFU,
+                                        SERIAL_MOTION_ERROR_NOT_ACTIVE);
+      }
+      else
+      {
+        serial_motion_stop_pending = 1U;
+        serial_motion_last_response_ok = 0U;
+      }
+      serial_test_last_response_ok = serial_motion_last_response_ok;
+    }
+    else if ((serial_test_rx_frame[2] == 0x02U) &&
+             (serial_test_rx_frame[3] == 0x03U))
+    {
+      serial_test_last_frame_ok = 0U;
+      serial_motion_status_query_count++;
+      if ((serial_test_rx_frame[12] != 0xAAU) ||
+          (serial_test_rx_frame[13] != 0xAAU))
+      {
+        serial_motion_error_code = SERIAL_MOTION_ERROR_FRAME;
+        serial_motion_last_status_response_ok =
+            Serial_Motion_SendResponse(0xFFU, SERIAL_MOTION_ERROR_FRAME);
+      }
+      else
+      {
+        serial_motion_last_status_response_ok =
+            Serial_Motion_SendStatusResponse();
+      }
+      serial_test_last_response_ok = serial_motion_last_status_response_ok;
+    }
     else
     {
       serial_test_last_frame_ok = 0U;
@@ -373,7 +461,7 @@ static uint8_t Serial_Motion_SendResponse(uint8_t status, uint8_t error_code)
   response[1] = 0xAAU;
   response[2] = 0x02U;
   response[3] = status;
-  if ((status == 0x00U) || (status == 0x01U))
+  if ((status == 0x00U) || (status == 0x01U) || (status == 0x02U))
   {
     response[4] = serial_motion_target_axis;
     response[5] = serial_motion_target_direction;
@@ -399,11 +487,62 @@ static uint8_t Serial_Motion_SendResponse(uint8_t status, uint8_t error_code)
                             SERIAL_TEST_FRAME_SIZE, 100U) == HAL_OK);
 }
 
+static uint8_t Serial_Motion_SendStatusResponse(void)
+{
+  uint8_t response[SERIAL_TEST_FRAME_SIZE];
+
+  response[0] = 0xAAU;
+  response[1] = 0xAAU;
+  response[2] = 0x02U;
+  response[3] = 0x03U;
+  response[4] = serial_motion_target_axis;
+  response[5] = serial_motion_state;
+  response[6] = (uint8_t)(serial_motion_target_speed_hz >> 8);
+  response[7] = (uint8_t)serial_motion_target_speed_hz;
+  response[8] = (uint8_t)(serial_motion_pulses_done >> 24);
+  response[9] = (uint8_t)(serial_motion_pulses_done >> 16);
+  response[10] = (uint8_t)(serial_motion_pulses_done >> 8);
+  response[11] = (uint8_t)serial_motion_pulses_done;
+  response[12] = 0x55U;
+  response[13] = 0x55U;
+
+  return (HAL_UART_Transmit(&huart3, response,
+                            SERIAL_TEST_FRAME_SIZE, 100U) == HAL_OK);
+}
+
+static uint16_t Serial_Motion_ReadXLimitMask(void)
+{
+  uint16_t limit_mask = 0U;
+
+  if (HAL_GPIO_ReadPin(X_LIM_L_GPIO_Port, X_LIM_L_Pin) == GPIO_PIN_RESET)
+  {
+    limit_mask |= (1U << 0);
+  }
+  if (HAL_GPIO_ReadPin(X_LIM_H_GPIO_Port, X_LIM_H_Pin) == GPIO_PIN_RESET)
+  {
+    limit_mask |= (1U << 1);
+  }
+  if (HAL_GPIO_ReadPin(X_LIM_R_GPIO_Port, X_LIM_R_Pin) == GPIO_PIN_RESET)
+  {
+    limit_mask |= (1U << 2);
+  }
+
+  return limit_mask;
+}
+
 static uint8_t Serial_Motion_PrepareAndStart(void)
 {
   uint32_t expected_chopconf;
   uint32_t period_ticks;
+  uint16_t x_limit_mask;
   GPIO_InitTypeDef x_step_gpio = {0};
+
+  x_limit_mask = Serial_Motion_ReadXLimitMask();
+  if ((x_limit_mask & X_LIMIT_ACTIVE_MASK) != 0U)
+  {
+    serial_motion_last_limit_mask = x_limit_mask;
+    return SERIAL_MOTION_ERROR_LIMIT;
+  }
 
   TMC5160_DISABLE(&x_tmc5160);
   x_tmc5160_ioin = TMC5160_ReadRegister(&x_tmc5160, TMC5160_IOIN);
@@ -459,6 +598,12 @@ static uint8_t Serial_Motion_PrepareAndStart(void)
     return SERIAL_MOTION_ERROR_TMC;
   }
 
+  x_limit_mask = Serial_Motion_ReadXLimitMask();
+  if ((x_limit_mask & X_LIMIT_ACTIVE_MASK) != 0U)
+  {
+    serial_motion_last_limit_mask = x_limit_mask;
+    return SERIAL_MOTION_ERROR_LIMIT;
+  }
   TMC5160_ENABLE(&x_tmc5160);
   x_tmc5160_enable_test_active = 1U;
   HAL_Delay(200U);
@@ -475,6 +620,15 @@ static uint8_t Serial_Motion_PrepareAndStart(void)
     TMC5160_DISABLE(&x_tmc5160);
     x_tmc5160_enable_test_active = 0U;
     return SERIAL_MOTION_ERROR_TMC;
+  }
+
+  x_limit_mask = Serial_Motion_ReadXLimitMask();
+  if ((x_limit_mask & X_LIMIT_ACTIVE_MASK) != 0U)
+  {
+    serial_motion_last_limit_mask = x_limit_mask;
+    TMC5160_DISABLE(&x_tmc5160);
+    x_tmc5160_enable_test_active = 0U;
+    return SERIAL_MOTION_ERROR_LIMIT;
   }
 
   HAL_GPIO_WritePin(X_DIR_GPIO_Port, X_DIR_Pin,
@@ -522,7 +676,79 @@ static uint8_t Serial_Motion_PrepareAndStart(void)
 static void Serial_Motion_Task(void)
 {
   uint8_t start_error_code;
+  uint8_t stop_status;
+  uint8_t stop_error_code;
+  uint8_t stop_state;
+  uint16_t x_limit_mask;
   GPIO_InitTypeDef x_step_gpio = {0};
+
+  if ((serial_motion_active != 0U) || (serial_motion_done != 0U))
+  {
+    x_limit_mask = Serial_Motion_ReadXLimitMask();
+    if ((x_limit_mask & X_LIMIT_ACTIVE_MASK) != 0U)
+    {
+      serial_motion_last_limit_mask = x_limit_mask;
+      serial_motion_limit_pending = 1U;
+      serial_motion_stop_pending = 1U;
+    }
+  }
+
+  if (serial_motion_stop_pending != 0U)
+  {
+    if (serial_motion_limit_pending != 0U)
+    {
+      stop_status = 0xFFU;
+      stop_error_code = SERIAL_MOTION_ERROR_LIMIT;
+      stop_state = SERIAL_MOTION_STATE_LIMIT_STOPPED;
+      serial_motion_limit_stop_count++;
+    }
+    else
+    {
+      stop_status = 0x02U;
+      stop_error_code = SERIAL_MOTION_ERROR_NONE;
+      stop_state = SERIAL_MOTION_STATE_STOPPED;
+    }
+    serial_motion_stop_pending = 0U;
+    serial_motion_limit_pending = 0U;
+    serial_motion_command_pending = 0U;
+    if (serial_motion_active != 0U)
+    {
+      HAL_TIM_PWM_Stop_IT(&htim2, TIM_CHANNEL_2);
+      serial_motion_active = 0U;
+    }
+    serial_motion_done = 0U;
+    x_step_gpio.Pin = X_STEP_Pin;
+    x_step_gpio.Mode = GPIO_MODE_OUTPUT_PP;
+    x_step_gpio.Pull = GPIO_NOPULL;
+    x_step_gpio.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(X_STEP_GPIO_Port, &x_step_gpio);
+    HAL_GPIO_WritePin(X_STEP_GPIO_Port, X_STEP_Pin, GPIO_PIN_RESET);
+    if (serial_motion_start_ok != 0U)
+    {
+      serial_motion_mscnt_after =
+          TMC5160_ReadRegister(&x_tmc5160, TMC5160_MSCNT);
+      serial_motion_mscnt_delta =
+          (uint16_t)((serial_motion_mscnt_after -
+                      serial_motion_mscnt_before) & 0x03FFU);
+    }
+    TMC5160_DISABLE(&x_tmc5160);
+    x_tmc5160_enable_test_active = 0U;
+    serial_motion_start_ok = 0U;
+    serial_motion_continuous = 0U;
+    serial_motion_busy = 0U;
+    serial_motion_state = stop_state;
+    serial_motion_error_code = stop_error_code;
+    serial_motion_last_completion_status = stop_status;
+    serial_motion_last_completion_error_code = stop_error_code;
+    serial_motion_last_completion_response_ok =
+        Serial_Motion_SendResponse(stop_status, stop_error_code);
+    if (stop_status == 0xFFU)
+    {
+      serial_motion_last_limit_response_ok =
+          serial_motion_last_completion_response_ok;
+    }
+    serial_test_last_response_ok = serial_motion_last_completion_response_ok;
+  }
 
   if ((serial_motion_command_pending != 0U) &&
       (serial_motion_active == 0U))
@@ -566,6 +792,9 @@ static void Serial_Motion_Task(void)
            0x03FFU)));
     TMC5160_DISABLE(&x_tmc5160);
     x_tmc5160_enable_test_active = 0U;
+    serial_motion_start_ok = 0U;
+    serial_motion_continuous = 0U;
+    serial_motion_limit_pending = 0U;
     serial_motion_busy = 0U;
     serial_motion_state = SERIAL_MOTION_STATE_DONE;
     serial_motion_error_code = SERIAL_MOTION_ERROR_NONE;
@@ -582,7 +811,8 @@ void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
   if ((htim->Instance == TIM2) && (serial_motion_active != 0U))
   {
     serial_motion_pulses_done++;
-    if (serial_motion_pulses_done >= serial_motion_target_steps)
+    if ((serial_motion_continuous == 0U) &&
+        (serial_motion_pulses_done >= serial_motion_target_steps))
     {
       HAL_TIM_PWM_Stop_IT(htim, TIM_CHANNEL_2);
       serial_motion_active = 0U;
@@ -653,7 +883,6 @@ int main(void)
     LED_Task();
     /* USER CODE BEGIN 3 */
     Serial_Test_Task();
-    Serial_Motion_Task();
     if ((HAL_GetTick() - limit_gpio_poll_tick) >=
         LIMIT_GPIO_POLL_PERIOD_MS)
     {
@@ -688,6 +917,7 @@ int main(void)
       if (limit_pa10_level == GPIO_PIN_RESET) limit_active_mask |= (1U << 8);
       limit_gpio_sample_valid = 1U;
     }
+    Serial_Motion_Task();
 #if !LIMIT_GPIO_STATIC_TEST && !SERIAL_PROTOCOL_STAGE1_TEST
     if ((x_tmc5160_spi_test_pending != 0U) &&
         ((HAL_GetTick() - x_tmc5160_spi_test_tick) >= 100U))
