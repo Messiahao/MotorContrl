@@ -3,6 +3,19 @@
 
 #include "main.h"
 
+#define TMC5160_FRAME_SIZE 5
+#define TMC5160_WRITE_BIT 0x80
+#define TMC5160_INIT_DELAY_MS 10
+#define TMC5160_VERSION_SHIFT 24
+#define TMC5160_VERSION_VALUE 0x30U
+#define TMC5160_MSCNT_MASK 0x03FFU
+#define TMC5160_MSCNT_MODULUS 0x0400U
+#define TMC5160_BYTE1_SHIFT 8
+#define TMC5160_BYTE2_SHIFT 16
+#define TMC5160_BYTE3_SHIFT 24
+#define TMC5160_COOLCONF_INIT 0
+
+
 /*
 ==================================================
 TMC5160 device structure
@@ -20,13 +33,14 @@ typedef struct
 
 }TMC5160_HandleTypeDef;
 
+void BspTmc5160_WriteEnable(const TMC5160_HandleTypeDef *dev, uint8_t enabled);
+
 /*
 ==================================================
 SPI handle
 ==================================================
 */
 
-extern SPI_HandleTypeDef hspi1;
 
 /*
 ==================================================
@@ -34,9 +48,7 @@ CS control
 ==================================================
 */
 
-#define TMC5160_CS_LOW(dev)		HAL_GPIO_WritePin((dev)->CS_GPIO_Port, (dev)->CS_Pin, GPIO_PIN_RESET)
 
-#define TMC5160_CS_HIGH(dev)  HAL_GPIO_WritePin((dev)->CS_GPIO_Port, (dev)->CS_Pin, GPIO_PIN_SET)
 
 /*
 ==================================================
@@ -48,9 +60,7 @@ ENN = High disable
 ==================================================
 */
 
-#define TMC5160_ENABLE(dev) 	HAL_GPIO_WritePin((dev)->EN_GPIO_Port, (dev)->EN_Pin, GPIO_PIN_RESET)
 
-#define TMC5160_DISABLE(dev)  HAL_GPIO_WritePin((dev)->EN_GPIO_Port, (dev)->EN_Pin, GPIO_PIN_SET)
 
 /*
 ==================================================
@@ -184,10 +194,10 @@ Function
 ==================================================
 */
 
-void TMC5160_WriteRegister(const TMC5160_HandleTypeDef *dev, uint8_t address, uint32_t data);
+void BspTmc5160_WriteRegister(const TMC5160_HandleTypeDef *dev, uint8_t address, uint32_t data);
 
-uint32_t TMC5160_ReadRegister(const TMC5160_HandleTypeDef *dev, uint8_t address);
+uint32_t BspTmc5160_ReadRegister(const TMC5160_HandleTypeDef *dev, uint8_t address);
 
-void TMC5160_Init(const TMC5160_HandleTypeDef *dev, uint32_t current);
+void BspTmc5160_Init(const TMC5160_HandleTypeDef *dev, uint32_t current);
 
 #endif

@@ -24,10 +24,10 @@
 
 /* USER CODE END 0 */
 
-I2C_HandleTypeDef hi2c1;
+static I2C_HandleTypeDef hi2c1;
 
 /* I2C1 init function */
-void MX_I2C1_Init(void)
+static void MX_I2C1_Init(void)
 {
 
   /* USER CODE BEGIN I2C1_Init 0 */
@@ -38,7 +38,7 @@ void MX_I2C1_Init(void)
 
   /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
-  hi2c1.Init.ClockSpeed = 100000;
+  hi2c1.Init.ClockSpeed = BSP_I2C_CLOCK_HZ;
   hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
@@ -115,3 +115,19 @@ void HAL_I2C_MspDeInit(I2C_HandleTypeDef* i2cHandle)
 
 /* USER CODE END 1 */
 
+
+void BspI2c_Init(void)
+{
+  MX_I2C1_Init();
+}
+
+/* Address follows HAL's left-shifted 7-bit-address convention. Not called by light stubs. */
+HAL_StatusTypeDef BspI2c_Write(uint16_t address, uint8_t *data, uint16_t length, uint32_t timeout)
+{
+  return HAL_I2C_Master_Transmit(&hi2c1, address, data, length, timeout);
+}
+
+HAL_StatusTypeDef BspI2c_Read(uint16_t address, uint8_t *data, uint16_t length, uint32_t timeout)
+{
+  return HAL_I2C_Master_Receive(&hi2c1, address, data, length, timeout);
+}

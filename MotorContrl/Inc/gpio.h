@@ -34,11 +34,26 @@ extern "C" {
 
 /* USER CODE BEGIN Private defines */
 
+#define BSP_GPIO_X_LIMIT_L_BIT 0
+#define BSP_GPIO_X_LIMIT_H_BIT 1
+#define BSP_GPIO_X_LIMIT_R_BIT 2
+#define BSP_GPIO_Y_LIMIT_L_BIT 3
+#define BSP_GPIO_Y_LIMIT_H_BIT 4
+#define BSP_GPIO_Y_LIMIT_R_BIT 5
+#define BSP_GPIO_Z_LIMIT_L_BIT 6
+#define BSP_GPIO_Z_LIMIT_H_BIT 7
+#define BSP_GPIO_Z_LIMIT_R_BIT 8
+
 /* USER CODE END Private defines */
 
-void MX_GPIO_Init(void);
+void BspGpio_Init(void);
 
 /* USER CODE BEGIN Prototypes */
+
+GPIO_PinState BspGpio_Read(GPIO_TypeDef *port, uint16_t pin);
+void BspGpio_Write(GPIO_TypeDef *port, uint16_t pin, GPIO_PinState level);
+void BspGpio_WriteXStepMode(uint32_t mode);
+uint16_t BspGpio_ReadXLimitMask(void);
 
 /* USER CODE END Prototypes */
 
@@ -47,4 +62,3 @@ void MX_GPIO_Init(void);
 #endif
 
 #endif /*__ GPIO_H__ */
-

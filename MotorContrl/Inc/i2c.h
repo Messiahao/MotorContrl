@@ -32,15 +32,20 @@ extern "C" {
 
 /* USER CODE END Includes */
 
-extern I2C_HandleTypeDef hi2c1;
 
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
 
-void MX_I2C1_Init(void);
+void BspI2c_Init(void);
 
 /* USER CODE BEGIN Prototypes */
+
+#define BSP_I2C_CLOCK_HZ 100000
+
+/* address is a HAL-format address: 7-bit address << 1. */
+HAL_StatusTypeDef BspI2c_Write(uint16_t address, uint8_t *data, uint16_t length, uint32_t timeout);
+HAL_StatusTypeDef BspI2c_Read(uint16_t address, uint8_t *data, uint16_t length, uint32_t timeout);
 
 /* USER CODE END Prototypes */
 
@@ -49,4 +54,3 @@ void MX_I2C1_Init(void);
 #endif
 
 #endif /* __I2C_H__ */
-

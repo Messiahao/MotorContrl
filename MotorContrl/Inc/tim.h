@@ -32,23 +32,35 @@ extern "C" {
 
 /* USER CODE END Includes */
 
+/* HAL/ISR ABI exception: declaration only. The unchanged IRQ uses &htim2.
+   Application modules must use BspTim_* instead of sharing this handle. */
 extern TIM_HandleTypeDef htim2;
 
-extern TIM_HandleTypeDef htim3;
 
-extern TIM_HandleTypeDef htim4;
 
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
 
-void MX_TIM2_Init(void);
-void MX_TIM3_Init(void);
-void MX_TIM4_Init(void);
+void BspTim2_Init(void);
+void BspTim3_Init(void);
+void BspTim4_Init(void);
 
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 
 /* USER CODE BEGIN Prototypes */
+
+#define BSP_TIM_PRESCALER 71
+#define BSP_TIM2_INITIAL_PERIOD 99
+#define BSP_TIM34_INITIAL_PERIOD 999
+#define BSP_TIM_INITIAL_PULSE 50
+#define BSP_TIM2_IRQ_PRIORITY 2U
+#define BSP_TIM2_IRQ_SUBPRIORITY 0U
+
+void BspTim_WriteXSetupInterrupt(void);
+HAL_StatusTypeDef BspTim_WriteXStart(void);
+HAL_StatusTypeDef BspTim_WriteXStop(void);
+void BspTim_WriteXDisableUpdate(void);
 
 /* USER CODE END Prototypes */
 
@@ -57,4 +69,3 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 #endif
 
 #endif /* __TIM_H__ */
-

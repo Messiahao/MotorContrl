@@ -480,6 +480,56 @@
           <GroupName>Inc</GroupName>
           <Files>
             <File>
+              <FileName>app_aux_output.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Inc\app_aux_output.h</FilePath>
+            </File>
+            <File>
+              <FileName>app_led.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Inc\app_led.h</FilePath>
+            </File>
+            <File>
+              <FileName>app_light.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Inc\app_light.h</FilePath>
+            </File>
+            <File>
+              <FileName>app_limit.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Inc\app_limit.h</FilePath>
+            </File>
+            <File>
+              <FileName>app_motion.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Inc\app_motion.h</FilePath>
+            </File>
+            <File>
+              <FileName>app_protocol.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Inc\app_protocol.h</FilePath>
+            </File>
+            <File>
+              <FileName>app_scheduler.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Inc\app_scheduler.h</FilePath>
+            </File>
+            <File>
+              <FileName>app_self_test.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Inc\app_self_test.h</FilePath>
+            </File>
+            <File>
+              <FileName>app_types.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Inc\app_types.h</FilePath>
+            </File>
+            <File>
+              <FileName>config.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Inc\config.h</FilePath>
+            </File>
+            <File>
               <FileName>gpio.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\Inc\gpio.h</FilePath>
@@ -490,9 +540,19 @@
               <FilePath>..\Inc\i2c.h</FilePath>
             </File>
             <File>
+              <FileName>led.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Inc\led.h</FilePath>
+            </File>
+            <File>
               <FileName>main.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\Inc\main.h</FilePath>
+            </File>
+            <File>
+              <FileName>mcp4728.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Inc\mcp4728.h</FilePath>
             </File>
             <File>
               <FileName>spi.h</FileName>
@@ -510,14 +570,14 @@
               <FilePath>..\Inc\stm32f1xx_it.h</FilePath>
             </File>
             <File>
+              <FileName>system_clock.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Inc\system_clock.h</FilePath>
+            </File>
+            <File>
               <FileName>tim.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\Inc\tim.h</FilePath>
-            </File>
-            <File>
-              <FileName>usart.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\Inc\usart.h</FilePath>
             </File>
             <File>
               <FileName>tmc5160.h</FileName>
@@ -525,9 +585,9 @@
               <FilePath>..\Inc\tmc5160.h</FilePath>
             </File>
             <File>
-              <FileName>led.h</FileName>
+              <FileName>usart.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\Inc\led.h</FilePath>
+              <FilePath>..\Inc\usart.h</FilePath>
             </File>
           </Files>
         </Group>
@@ -535,24 +595,9 @@
           <GroupName>Src</GroupName>
           <Files>
             <File>
-              <FileName>gpio.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Src\gpio.c</FilePath>
-            </File>
-            <File>
-              <FileName>i2c.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Src\i2c.c</FilePath>
-            </File>
-            <File>
               <FileName>main.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Src\main.c</FilePath>
-            </File>
-            <File>
-              <FileName>spi.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Src\spi.c</FilePath>
             </File>
             <File>
               <FileName>stm32f1xx_hal_msp.c</FileName>
@@ -565,29 +610,104 @@
               <FilePath>..\Src\stm32f1xx_it.c</FilePath>
             </File>
             <File>
+              <FileName>system_clock.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Src\system_clock.c</FilePath>
+            </File>
+            <File>
               <FileName>system_stm32f1xx.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Src\system_stm32f1xx.c</FilePath>
             </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Drivers/Board</GroupName>
+          <Files>
             <File>
-              <FileName>tim.c</FileName>
+              <FileName>gpio.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Src\tim.c</FilePath>
+              <FilePath>..\Drivers\Board\gpio.c</FilePath>
             </File>
             <File>
-              <FileName>usart.c</FileName>
+              <FileName>i2c.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Src\usart.c</FilePath>
-            </File>
-            <File>
-              <FileName>tmc5160.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Src\tmc5160.c</FilePath>
+              <FilePath>..\Drivers\Board\i2c.c</FilePath>
             </File>
             <File>
               <FileName>led.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Src\led.c</FilePath>
+              <FilePath>..\Drivers\Board\led.c</FilePath>
+            </File>
+            <File>
+              <FileName>mcp4728.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\Board\mcp4728.c</FilePath>
+            </File>
+            <File>
+              <FileName>spi.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\Board\spi.c</FilePath>
+            </File>
+            <File>
+              <FileName>tim.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\Board\tim.c</FilePath>
+            </File>
+            <File>
+              <FileName>tmc5160.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\Board\tmc5160.c</FilePath>
+            </File>
+            <File>
+              <FileName>usart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\Board\usart.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>APPs</GroupName>
+          <Files>
+            <File>
+              <FileName>app_aux_output.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\APPs\app_aux_output.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_led.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\APPs\app_led.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_light.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\APPs\app_light.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_limit.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\APPs\app_limit.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_motion.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\APPs\app_motion.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_protocol.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\APPs\app_protocol.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_scheduler.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\APPs\app_scheduler.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_self_test.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\APPs\app_self_test.c</FilePath>
             </File>
           </Files>
         </Group>

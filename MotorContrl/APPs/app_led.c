@@ -1,5 +1,5 @@
+#include "app_led.h"
 #include "led.h"
-#include "gpio.h"
 
 /*
  * LED toggle interval
@@ -7,7 +7,6 @@
  * Unit:
  * millisecond
  */
-#define LED_BLINK_PERIOD_MS     500U
 
 /*
  * Store the last toggle timestamp
@@ -23,11 +22,11 @@ static uint32_t led_last_tick = 0;
 static uint8_t led_state = 0;
 
 /*
- * LED_Init()
+ * AppLed_Init()
  *
  * Called once after GPIO initialization.
  */
-void LED_Init(void)
+void AppLed_Init(void)
 {
 
     /*
@@ -55,19 +54,19 @@ void LED_Init(void)
      */
     led_state = 0;
 
-    HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+    BspLed_Init();
 
 }
 
 /*
- * LED_Task()
+ * AppLed_Process()
  *
  * Non-blocking periodic task.
  *
  * It only checks elapsed time.
  * No delay exists here.
  */
-void LED_Task(void)
+void AppLed_Process(void)
 {
 
     uint32_t current_tick;
@@ -111,13 +110,13 @@ void LED_Task(void)
         if(led_state)
         {
 
-            HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+            BspLed_Write(GPIO_PIN_RESET);
 
         }
         else
         {
 
-            HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+            BspLed_Write(GPIO_PIN_SET);
 
         }
 

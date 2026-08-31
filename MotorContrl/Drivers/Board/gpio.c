@@ -39,7 +39,7 @@
         * EVENT_OUT
         * EXTI
 */
-void MX_GPIO_Init(void)
+static void MX_GPIO_Init(void)
 {
 
   GPIO_InitTypeDef GPIO_InitStruct = {0};
@@ -120,3 +120,48 @@ void MX_GPIO_Init(void)
 /* USER CODE BEGIN 2 */
 
 /* USER CODE END 2 */
+
+void BspGpio_Init(void)
+{
+  MX_GPIO_Init();
+}
+
+GPIO_PinState BspGpio_Read(GPIO_TypeDef *port, uint16_t pin)
+{
+  return HAL_GPIO_ReadPin(port, pin);
+}
+
+void BspGpio_Write(GPIO_TypeDef *port, uint16_t pin, GPIO_PinState level)
+{
+  HAL_GPIO_WritePin(port, pin, level);
+}
+
+void BspGpio_WriteXStepMode(uint32_t mode)
+{
+  GPIO_InitTypeDef x_step_gpio = {0};
+  x_step_gpio.Pin = X_STEP_Pin;
+  x_step_gpio.Mode = mode;
+  x_step_gpio.Pull = GPIO_NOPULL;
+  x_step_gpio.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(X_STEP_GPIO_Port, &x_step_gpio);
+}
+
+uint16_t BspGpio_ReadXLimitMask(void)
+{
+  uint16_t limit_mask = 0U;
+
+  if (HAL_GPIO_ReadPin(X_LIM_L_GPIO_Port, X_LIM_L_Pin) == GPIO_PIN_RESET)
+  {
+    limit_mask |= (1U << BSP_GPIO_X_LIMIT_L_BIT);
+  }
+  if (HAL_GPIO_ReadPin(X_LIM_H_GPIO_Port, X_LIM_H_Pin) == GPIO_PIN_RESET)
+  {
+    limit_mask |= (1U << BSP_GPIO_X_LIMIT_H_BIT);
+  }
+  if (HAL_GPIO_ReadPin(X_LIM_R_GPIO_Port, X_LIM_R_Pin) == GPIO_PIN_RESET)
+  {
+    limit_mask |= (1U << BSP_GPIO_X_LIMIT_R_BIT);
+  }
+
+  return limit_mask;
+}

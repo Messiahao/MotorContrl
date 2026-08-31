@@ -32,18 +32,25 @@ extern "C" {
 
 /* USER CODE END Includes */
 
-extern UART_HandleTypeDef huart2;
 
-extern UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
 
-void MX_USART2_UART_Init(void);
-void MX_USART3_UART_Init(void);
+void BspUsart2_Init(void);
+void BspUsart3_Init(void);
 
 /* USER CODE BEGIN Prototypes */
+
+#define BSP_USART_BAUD_RATE 115200
+#define BSP_USART_BYTE_MASK 0x00FFU
+
+uint8_t BspUsart_ReadOverrun(void);
+void BspUsart_WriteClearOverrun(void);
+uint8_t BspUsart_ReadAvailable(void);
+uint8_t BspUsart_ReadByte(void);
+HAL_StatusTypeDef BspUsart_Write(uint8_t *data, uint16_t length, uint32_t timeout);
 
 /* USER CODE END Prototypes */
 
@@ -52,4 +59,3 @@ void MX_USART3_UART_Init(void);
 #endif
 
 #endif /* __USART_H__ */
-

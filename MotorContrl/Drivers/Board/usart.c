@@ -24,12 +24,12 @@
 
 /* USER CODE END 0 */
 
-UART_HandleTypeDef huart2;
-UART_HandleTypeDef huart3;
+static UART_HandleTypeDef huart2;
+static UART_HandleTypeDef huart3;
 
 /* USART2 init function */
 
-void MX_USART2_UART_Init(void)
+static void MX_USART2_UART_Init(void)
 {
 
   /* USER CODE BEGIN USART2_Init 0 */
@@ -40,7 +40,7 @@ void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
+  huart2.Init.BaudRate = BSP_USART_BAUD_RATE;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -58,7 +58,7 @@ void MX_USART2_UART_Init(void)
 }
 /* USART3 init function */
 
-void MX_USART3_UART_Init(void)
+static void MX_USART3_UART_Init(void)
 {
 
   /* USER CODE BEGIN USART3_Init 0 */
@@ -69,7 +69,7 @@ void MX_USART3_UART_Init(void)
 
   /* USER CODE END USART3_Init 1 */
   huart3.Instance = USART3;
-  huart3.Init.BaudRate = 115200;
+  huart3.Init.BaudRate = BSP_USART_BAUD_RATE;
   huart3.Init.WordLength = UART_WORDLENGTH_8B;
   huart3.Init.StopBits = UART_STOPBITS_1;
   huart3.Init.Parity = UART_PARITY_NONE;
@@ -193,3 +193,39 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
 
 /* USER CODE END 1 */
 
+
+void BspUsart2_Init(void)
+{
+  MX_USART2_UART_Init();
+}
+
+void BspUsart3_Init(void)
+{
+  MX_USART3_UART_Init();
+}
+
+uint8_t BspUsart_ReadOverrun(void)
+{
+  return (__HAL_UART_GET_FLAG(&huart3, UART_FLAG_ORE) != RESET);
+}
+
+void BspUsart_WriteClearOverrun(void)
+{
+  __HAL_UART_CLEAR_OREFLAG(&huart3);
+}
+
+uint8_t BspUsart_ReadAvailable(void)
+{
+  return (__HAL_UART_GET_FLAG(&huart3, UART_FLAG_RXNE) != RESET);
+}
+
+uint8_t BspUsart_ReadByte(void)
+{
+  return (uint8_t)(huart3.Instance->DR & BSP_USART_BYTE_MASK);
+}
+
+/* CN4 / USART3 only; CN6 / USART2 remains reserved. */
+HAL_StatusTypeDef BspUsart_Write(uint8_t *data, uint16_t length, uint32_t timeout)
+{
+  return HAL_UART_Transmit(&huart3, data, length, timeout);
+}

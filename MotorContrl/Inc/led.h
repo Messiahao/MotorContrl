@@ -1,35 +1,17 @@
-#ifndef __LED_H
-#define __LED_H
+#ifndef MOTOR_LED_H
+#define MOTOR_LED_H
+
+#include "main.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include "main.h"
-
-/*
- * LED initialization function
- *
- * This function initializes the internal variables
- * used by LED task.
- *
- */
-void LED_Init(void);
-
-/*
- * LED periodic task
- *
- * This function must be called repeatedly inside main loop.
- *
- * It is non-blocking.
- *
- * Function:
- * Toggle LED state every 500ms.
- */
-void LED_Task(void);
+void BspLed_Init(void);
+void BspLed_Write(GPIO_PinState level);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __LED_H */
+#endif /* MOTOR_LED_H */

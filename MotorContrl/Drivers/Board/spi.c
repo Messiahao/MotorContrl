@@ -24,10 +24,10 @@
 
 /* USER CODE END 0 */
 
-SPI_HandleTypeDef hspi1;
+static SPI_HandleTypeDef hspi1;
 
 /* SPI1 init function */
-void MX_SPI1_Init(void)
+static void MX_SPI1_Init(void)
 {
 
   /* USER CODE BEGIN SPI1_Init 0 */
@@ -48,7 +48,7 @@ void MX_SPI1_Init(void)
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi1.Init.CRCPolynomial = 10;
+  hspi1.Init.CRCPolynomial = BSP_SPI_CRC_POLYNOMIAL;
   if (HAL_SPI_Init(&hspi1) != HAL_OK)
   {
     Error_Handler();
@@ -121,3 +121,18 @@ void HAL_SPI_MspDeInit(SPI_HandleTypeDef* spiHandle)
 
 /* USER CODE END 1 */
 
+
+void BspSpi_Init(void)
+{
+  MX_SPI1_Init();
+}
+
+HAL_StatusTypeDef BspSpi_Write(uint8_t *data, uint16_t length, uint32_t timeout)
+{
+  return HAL_SPI_Transmit(&hspi1, data, length, timeout);
+}
+
+HAL_StatusTypeDef BspSpi_ReadWrite(uint8_t *tx, uint8_t *rx, uint16_t length, uint32_t timeout)
+{
+  return HAL_SPI_TransmitReceive(&hspi1, tx, rx, length, timeout);
+}

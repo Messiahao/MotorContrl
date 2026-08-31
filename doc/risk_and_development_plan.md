@@ -125,3 +125,11 @@
 - 调试变量：`serial_relay_command_count`、`serial_relay_state`、`serial_relay_last_frame_ok`、`serial_relay_last_response_ok`、`serial_relay_error_code`，以及对应的 `serial_brake_*` 变量。
 - 上电默认 PB12/PB13 低电平。PB12 串口控制已由用户确认功能和回传正常；PB13 串口控制命令和回传正常，但抱闸器件仍有硬件问题，不得接入抱闸线圈。
 - 本项已保存为开发快照 `dev-20260827-serial-aux-output-unverified`；因抱闸器件和限位开关未完成验证，不制作正式发布版或匹配的已验证 HEX。
+
+## 2026-08-31 归档前验证记录
+
+- 用户报告当前归档范围内的既有功能均已完成实机测试，暂未发现问题。
+- 用户更换抱闸相关器件后确认 PB13/CN5 的 24 V 抱闸输出正常；此前关于原器件故障的历史记录保留，当前状态以本条为准。
+- 本次归档标识为 `v0.16-layered-refactor-aux-output-pass`，匹配 HEX 已随版本保存。Keil 全量构建结果为 0 错误、0 警告；重构主机差分测试默认配置 49 组、自检配置 2 组通过。
+- 光电限位开关测试安排在下一聊天中进行；PC6/PB15/PB14 及其他限位输入在测试完成前仍不标记为实机验收通过。
+- MCP4728/I2C 和灯板 CN10 四路输出当前只有架构空接口，尚未写入 DAC 事务，也未进行电压或 ACK 验证。

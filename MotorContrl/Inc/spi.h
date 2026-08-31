@@ -32,15 +32,19 @@ extern "C" {
 
 /* USER CODE END Includes */
 
-extern SPI_HandleTypeDef hspi1;
 
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
 
-void MX_SPI1_Init(void);
+void BspSpi_Init(void);
 
 /* USER CODE BEGIN Prototypes */
+
+#define BSP_SPI_CRC_POLYNOMIAL 10
+
+HAL_StatusTypeDef BspSpi_Write(uint8_t *data, uint16_t length, uint32_t timeout);
+HAL_StatusTypeDef BspSpi_ReadWrite(uint8_t *tx, uint8_t *rx, uint16_t length, uint32_t timeout);
 
 /* USER CODE END Prototypes */
 
@@ -49,4 +53,3 @@ void MX_SPI1_Init(void);
 #endif
 
 #endif /* __SPI_H__ */
-

@@ -25,11 +25,11 @@
 /* USER CODE END 0 */
 
 TIM_HandleTypeDef htim2;
-TIM_HandleTypeDef htim3;
-TIM_HandleTypeDef htim4;
+static TIM_HandleTypeDef htim3;
+static TIM_HandleTypeDef htim4;
 
 /* TIM2 init function */
-void MX_TIM2_Init(void)
+static void MX_TIM2_Init(void)
 {
 
   /* USER CODE BEGIN TIM2_Init 0 */
@@ -44,9 +44,9 @@ void MX_TIM2_Init(void)
   /* USER CODE END TIM2_Init 1 */
   /* 72 MHz / 72 / 100 = 10 kHz; 50 timer ticks gives a 50 us STEP high time. */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 71;
+  htim2.Init.Prescaler = BSP_TIM_PRESCALER;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 99;
+  htim2.Init.Period = BSP_TIM2_INITIAL_PERIOD;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
@@ -60,7 +60,7 @@ void MX_TIM2_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 50;
+  sConfigOC.Pulse = BSP_TIM_INITIAL_PULSE;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
@@ -74,7 +74,7 @@ void MX_TIM2_Init(void)
 
 }
 /* TIM3 init function */
-void MX_TIM3_Init(void)
+static void MX_TIM3_Init(void)
 {
 
   /* USER CODE BEGIN TIM3_Init 0 */
@@ -88,9 +88,9 @@ void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 71;
+  htim3.Init.Prescaler = BSP_TIM_PRESCALER;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 999;
+  htim3.Init.Period = BSP_TIM34_INITIAL_PERIOD;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
@@ -104,7 +104,7 @@ void MX_TIM3_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 50;
+  sConfigOC.Pulse = BSP_TIM_INITIAL_PULSE;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
@@ -118,7 +118,7 @@ void MX_TIM3_Init(void)
 
 }
 /* TIM4 init function */
-void MX_TIM4_Init(void)
+static void MX_TIM4_Init(void)
 {
 
   /* USER CODE BEGIN TIM4_Init 0 */
@@ -132,9 +132,9 @@ void MX_TIM4_Init(void)
 
   /* USER CODE END TIM4_Init 1 */
   htim4.Instance = TIM4;
-  htim4.Init.Prescaler = 71;
+  htim4.Init.Prescaler = BSP_TIM_PRESCALER;
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 999;
+  htim4.Init.Period = BSP_TIM34_INITIAL_PERIOD;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_PWM_Init(&htim4) != HAL_OK)
@@ -148,7 +148,7 @@ void MX_TIM4_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 50;
+  sConfigOC.Pulse = BSP_TIM_INITIAL_PULSE;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
@@ -304,3 +304,44 @@ void HAL_TIM_PWM_MspDeInit(TIM_HandleTypeDef* tim_pwmHandle)
 
 /* USER CODE END 1 */
 
+
+void BspTim2_Init(void)
+{
+  MX_TIM2_Init();
+}
+
+void BspTim3_Init(void)
+{
+  MX_TIM3_Init();
+}
+
+void BspTim4_Init(void)
+{
+  MX_TIM4_Init();
+}
+
+void BspTim_WriteXSetupInterrupt(void)
+{
+  __HAL_TIM_SET_COUNTER(&htim2, 0U);
+  __HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_CC2 | TIM_FLAG_UPDATE);
+  __HAL_TIM_DISABLE_IT(&htim2, TIM_IT_CC2);
+  __HAL_TIM_ENABLE_IT(&htim2, TIM_IT_UPDATE);
+  HAL_NVIC_SetPriority(TIM2_IRQn, BSP_TIM2_IRQ_PRIORITY, BSP_TIM2_IRQ_SUBPRIORITY);
+  HAL_NVIC_ClearPendingIRQ(TIM2_IRQn);
+  HAL_NVIC_EnableIRQ(TIM2_IRQn);
+}
+
+HAL_StatusTypeDef BspTim_WriteXStart(void)
+{
+  return HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+}
+
+HAL_StatusTypeDef BspTim_WriteXStop(void)
+{
+  return HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_2);
+}
+
+void BspTim_WriteXDisableUpdate(void)
+{
+  __HAL_TIM_DISABLE_IT(&htim2, TIM_IT_UPDATE);
+}
