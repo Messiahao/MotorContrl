@@ -19,6 +19,12 @@ static void Command(unsigned cmd, unsigned sub, unsigned axis, unsigned directio
     f[10]=(uint8_t)(distance>>8); f[11]=(uint8_t)distance;
     Queue(f,14);
 }
+static void LightCommand(unsigned action, unsigned channel, unsigned extra)
+{
+    uint8_t f[14]={0x55,0x55,5,0,0,0,0,0,0,0,0,0,0xaa,0xaa};
+    f[4]=(uint8_t)action; f[6]=(uint8_t)channel; f[8]=(uint8_t)extra;
+    Queue(f,14);
+}
 int main(int argc, char **argv)
 {
     unsigned n=argc>1 ? (unsigned)atoi(argv[1]) : 0, i;
@@ -85,8 +91,15 @@ int main(int argc, char **argv)
             Command(i,0,1,0,0,1); Poll("aux-bad-data");
             Command(i,0,1,0,0,0); rx_data[rx_count-1]=0; Poll("aux-bad-tail");
         }
-        Command(5,0,1,0,256,0); Poll("light-remains-unimplemented");
-        TestLightStubs(); Snapshot("light-stubs-no-effects");
+        for(i=1;i<=4;i++) {
+            LightCommand(1,i,0); Poll("light-on");
+            LightCommand(2,i,0); Poll("light-off");
+        }
+        LightCommand(3,1,0); Poll("light-bad-action");
+        LightCommand(1,1,1); Poll("light-bad-data");
+        LightCommand(1,5,0); Poll("light-bad-channel");
+        LightCommand(1,1,0); rx_data[rx_count-1]=0; Poll("light-bad-tail");
+        TestLightDriver(); Snapshot("light-driver-effects");
     } else if(n==19) {
         tx_failure=1;
         Command(1,0,0,0,0,0); Command(3,0,1,0,0,0); Command(4,0,1,0,0,0);

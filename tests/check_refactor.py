@@ -155,13 +155,23 @@ def generate(old, refactored, mode):
         allcode += no_includes(text('Drivers/Board/mcp4728.c')) + '\n'
         allcode += 'static void TestInit(void) { HAL_Init(); SystemClock_Config(); AppScheduler_Init(&motion_irq); }\n'
         allcode += 'static void TestPoll(void) { AppScheduler_Process(); }\n'
-        allcode += '''static void TestLightStubs(void) {
-          uint16_t value=0x5a5a; uint64_t before=trace_hash;
+        allcode += '''static void TestLightDriver(void) {
+          AppProtocolState protocol={0};
+          unsigned before=i2c_write_count;
+          uint8_t frame[SERIAL_TEST_FRAME_SIZE]={0x55,0x55,SERIAL_COMMAND_LIGHT,0,
+            SERIAL_AUX_ACTION_ON,0,APP_LIGHT_CHANNEL_4,0,0,0,0,0,0xaa,0xaa};
           AppLight_Init(); BspMcp4728_Init();
-          assert(AppLight_Process(1,1)==APP_LIGHT_NOT_IMPLEMENTED);
-          assert(BspMcp4728_Write(0,4095)==BSP_MCP4728_NOT_IMPLEMENTED);
-          assert(BspMcp4728_Read(0,&value)==BSP_MCP4728_NOT_IMPLEMENTED);
-          assert(value==0x5a5a && trace_hash==before);
+          AppLight_Process(&protocol,frame);
+          assert(i2c_write_count==before+1 && i2c_address==0xc0 && i2c_length==3);
+          assert(i2c_data[0]==0x46 && i2c_data[1]==0x0f && i2c_data[2]==0xff);
+          frame[SERIAL_FRAME_DATA0_INDEX]=SERIAL_AUX_ACTION_OFF;
+          frame[SERIAL_FRAME_DATA2_INDEX]=APP_LIGHT_CHANNEL_1;
+          AppLight_Process(&protocol,frame);
+          assert(i2c_write_count==before+2 && i2c_data[0]==0x40 &&
+                 i2c_data[1]==0x00 && i2c_data[2]==0x00);
+          frame[SERIAL_FRAME_DATA0_INDEX]=0x03;
+          AppLight_Process(&protocol,frame);
+          assert(i2c_write_count==before+2);
         }\n'''
     else:
         allcode += source.split('/* USER CODE BEGIN PD */')[1].split('/* USER CODE END PD */')[0]
@@ -180,7 +190,7 @@ def generate(old, refactored, mode):
         loop = loop[loop.index('{')+1:loop.rfind('}')]
         allcode += 'static void TestInit(void) {\n' + init + '\n}\n'
         allcode += 'static void TestPoll(void) {\n' + loop + '\n}\n'
-        allcode += 'static void TestLightStubs(void) {}\n'
+        allcode += 'static void TestLightDriver(void) {}\n'
     allcode += 'static void Snapshot(const char *name) {\n'
     allcode += 'printf("%s trace=%016llx events=%u tick=%u timer=%u/%u/%u/%u/%u gpio=%u/%u/%u\\n",name,trace_hash,event_count,tick,period,compare_value,counter,interrupt_enable,pwm_running,output_levels[0],output_levels[1],output_levels[2]);\n'
     for n, array in declarations:

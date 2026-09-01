@@ -8,13 +8,13 @@
 
 typedef enum { GPIO_PIN_RESET = 0, GPIO_PIN_SET = 1 } GPIO_PinState;
 typedef enum { HAL_OK = 0, HAL_ERROR = 1 } HAL_StatusTypeDef;
-typedef struct { unsigned id; } GPIO_TypeDef;
+typedef struct { unsigned id; uint32_t IDR; } GPIO_TypeDef;
 typedef struct { uint32_t Pin, Mode, Pull, Speed; } GPIO_InitTypeDef;
 typedef struct { uint32_t DR; } USART_TypeDef;
 typedef struct { USART_TypeDef *Instance; } UART_HandleTypeDef;
 typedef struct { void *Instance; } TIM_HandleTypeDef;
 typedef struct { unsigned unused; } SPI_HandleTypeDef;
-static GPIO_TypeDef ports[3] = {{0}, {1}, {2}};
+static GPIO_TypeDef ports[3] = {{0,65535}, {1,65535}, {2,65535}};
 static USART_TypeDef uart_instance;
 UART_HandleTypeDef huart3 = { &uart_instance };
 TIM_HandleTypeDef htim2 = { (void *)0x40000000 };
@@ -60,6 +60,10 @@ static uint32_t period, compare_value, counter, interrupt_enable, pwm_running;
 static unsigned fault, tx_failure, irq_after_gpio, pulse_direction;
 static unsigned ore, rx_read, rx_count;
 static uint8_t rx_data[4096];
+static uint16_t i2c_address;
+static uint8_t i2c_data[4];
+static uint16_t i2c_length;
+static unsigned i2c_write_count;
 static uint64_t trace_hash = 14695981039346656037ULL;
 static uint32_t event_count;
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim);
@@ -88,6 +92,7 @@ static void HAL_Delay(uint32_t delay)
 }
 static GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef *port, uint16_t pin)
 {
+    port->IDR = input_levels[port->id];
     GPIO_PinState level = (input_levels[port->id] & pin) ? GPIO_PIN_SET : GPIO_PIN_RESET;
     Trace(3,port->id,pin,level);
     if (irq_after_gpio && --irq_after_gpio == 0) MockPulse();
@@ -155,3 +160,17 @@ static void MockTmcWrite(unsigned address, uint32_t value)
 static void HAL_Init(void) { Trace(24,0,0,0); }
 void SystemClock_Config(void) { Trace(25,0,0,0); }
 static void MockInit(unsigned index) { Trace(26,index,0,0); }
+static HAL_StatusTypeDef BspI2c_Write(uint16_t address, uint8_t *data,
+                                      uint16_t length, uint32_t timeout)
+{
+    unsigned i;
+    i2c_address = address;
+    i2c_length = length;
+    i2c_write_count++;
+    Trace(27,address,length,timeout);
+    for (i=0; i<length && i<sizeof(i2c_data); i++) {
+        i2c_data[i] = data[i];
+        Trace(28,i,data[i],0);
+    }
+    return HAL_OK;
+}

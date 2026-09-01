@@ -57,9 +57,13 @@ static void Scheduler_ProcessFrame(void *context, const uint8_t *frame)
   {
     AppAuxOutput_Process(&app->aux, &app->protocol, frame);
   }
+  else if ((frame[SERIAL_FRAME_COMMAND_INDEX] == SERIAL_COMMAND_LIGHT) &&
+           (frame[SERIAL_FRAME_SUBCOMMAND_INDEX] == SERIAL_SUBCOMMAND_DEFAULT))
+  {
+    AppLight_Process(&app->protocol, frame);
+  }
   else
   {
-    /* Includes unimplemented 0x0500, exactly like the baseline unknown command. */
     app->protocol.serial_test_last_frame_ok = 0U;
     app->protocol.serial_test_frame_error_count++;
     app->protocol.serial_test_last_response_ok = 0U;
@@ -100,7 +104,6 @@ void AppScheduler_Process(void)
 #if !LIMIT_GPIO_STATIC_TEST && !SERIAL_PROTOCOL_STAGE1_TEST
   AppSelfTest_Process(&runtime.tmc, &x_tmc5160);
 #endif
-  /* Light processing is intentionally not scheduled until it is implemented. */
 }
 
 void AppScheduler_Run(void)
