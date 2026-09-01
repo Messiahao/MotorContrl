@@ -1,4 +1,5 @@
 #include "app_motion.h"
+#include "app_limit.h"
 #include "gpio.h"
 #include "tim.h"
 #include "usart.h"
@@ -66,13 +67,13 @@ static uint8_t Serial_Motion_PrepareAndStart(AppMotionState *motion, const AppMo
                                               AppTmcState *tmc, const TMC5160_HandleTypeDef *dev)
 {
   uint32_t expected_chopconf;
-  uint16_t x_limit_mask;
+  uint16_t limit_mask;
 
 
-  x_limit_mask = BspGpio_ReadXLimitMask();
-  if ((x_limit_mask & X_LIMIT_ACTIVE_MASK) != 0U)
+  limit_mask = BspGpio_ReadLimitActiveMask();
+  if ((limit_mask & X_LIMIT_ACTIVE_MASK) != 0U)
   {
-    motion->serial_motion_last_limit_mask = x_limit_mask;
+    motion->serial_motion_last_limit_mask = limit_mask & X_LIMIT_ACTIVE_MASK;
     return SERIAL_MOTION_ERROR_LIMIT;
   }
 
@@ -131,10 +132,10 @@ static uint8_t Serial_Motion_PrepareAndStart(AppMotionState *motion, const AppMo
     return SERIAL_MOTION_ERROR_TMC;
   }
 
-  x_limit_mask = BspGpio_ReadXLimitMask();
-  if ((x_limit_mask & X_LIMIT_ACTIVE_MASK) != 0U)
+  limit_mask = BspGpio_ReadLimitActiveMask();
+  if ((limit_mask & X_LIMIT_ACTIVE_MASK) != 0U)
   {
-    motion->serial_motion_last_limit_mask = x_limit_mask;
+    motion->serial_motion_last_limit_mask = limit_mask & X_LIMIT_ACTIVE_MASK;
     return SERIAL_MOTION_ERROR_LIMIT;
   }
   BspTmc5160_WriteEnable(dev, 1U);
@@ -156,10 +157,10 @@ static uint8_t Serial_Motion_PrepareAndStart(AppMotionState *motion, const AppMo
     return SERIAL_MOTION_ERROR_TMC;
   }
 
-  x_limit_mask = BspGpio_ReadXLimitMask();
-  if ((x_limit_mask & X_LIMIT_ACTIVE_MASK) != 0U)
+  limit_mask = BspGpio_ReadLimitActiveMask();
+  if ((limit_mask & X_LIMIT_ACTIVE_MASK) != 0U)
   {
-    motion->serial_motion_last_limit_mask = x_limit_mask;
+    motion->serial_motion_last_limit_mask = limit_mask & X_LIMIT_ACTIVE_MASK;
     BspTmc5160_WriteEnable(dev, 0U);
     tmc->x_tmc5160_enable_test_active = 0U;
     return SERIAL_MOTION_ERROR_LIMIT;
@@ -197,6 +198,7 @@ static uint8_t Serial_Motion_PrepareAndStart(AppMotionState *motion, const AppMo
   if (BspTim_WriteXStart() != HAL_OK)
   {
     (*irq->serial_motion_active) = 0U;
+    BspTim_WriteXStop();
     BspTim_WriteXDisableUpdate();
     BspTmc5160_WriteEnable(dev, 0U);
     tmc->x_tmc5160_enable_test_active = 0U;
@@ -397,15 +399,14 @@ void AppMotion_Process(AppMotionState *motion, const AppMotionIrq *irq, AppProto
   uint8_t stop_status;
   uint8_t stop_error_code;
   uint8_t stop_state;
-  uint16_t x_limit_mask;
+  uint16_t limit_event_mask;
 
-
-  if (((*irq->serial_motion_active) != 0U) || ((*irq->serial_motion_done) != 0U))
+  limit_event_mask = AppLimit_ConsumeInterruptMask() & X_LIMIT_ACTIVE_MASK;
+  if (limit_event_mask != 0U)
   {
-    x_limit_mask = BspGpio_ReadXLimitMask();
-    if ((x_limit_mask & X_LIMIT_ACTIVE_MASK) != 0U)
+    motion->serial_motion_last_limit_mask = limit_event_mask;
+    if (motion->serial_motion_busy != 0U)
     {
-      motion->serial_motion_last_limit_mask = x_limit_mask;
       motion->serial_motion_limit_pending = 1U;
       motion->serial_motion_stop_pending = 1U;
     }
@@ -446,7 +447,6 @@ void AppMotion_Process(AppMotionState *motion, const AppMotionIrq *irq, AppProto
           (uint16_t)((motion->serial_motion_mscnt_after -
                       motion->serial_motion_mscnt_before) & TMC5160_MSCNT_MASK);
     }
-    BspTmc5160_WriteEnable(dev, 0U);
     tmc->x_tmc5160_enable_test_active = 0U;
     motion->serial_motion_start_ok = 0U;
     (*irq->serial_motion_continuous) = 0U;
@@ -501,7 +501,6 @@ void AppMotion_Process(AppMotionState *motion, const AppMotionIrq *irq, AppProto
          (motion->serial_motion_mscnt_delta ==
           ((TMC5160_MSCNT_MODULUS - ((*irq->serial_motion_target_steps) & TMC5160_MSCNT_MASK)) &
            TMC5160_MSCNT_MASK)));
-    BspTmc5160_WriteEnable(dev, 0U);
     tmc->x_tmc5160_enable_test_active = 0U;
     motion->serial_motion_start_ok = 0U;
     (*irq->serial_motion_continuous) = 0U;

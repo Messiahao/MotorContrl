@@ -61,6 +61,7 @@ void BspTim_WriteXSetupInterrupt(void);
 HAL_StatusTypeDef BspTim_WriteXStart(void);
 HAL_StatusTypeDef BspTim_WriteXStop(void);
 void BspTim_WriteXDisableUpdate(void);
+void BspTim_WriteXEmergencyStop(void);
 
 /* USER CODE END Prototypes */
 

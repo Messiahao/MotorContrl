@@ -74,12 +74,12 @@ AppLed_Process
 → AppProtocol_Process：先检查 ORE，再连续读取到 RXNE 清空
    → 每个非链路测试帧立即回到调度器
       → 运动 / 继电器抱闸业务处理并在原位置回传
-→ AppLimit_Process：保留原来的两次 HAL_GetTick 和九路读取顺序
-→ AppMotion_Process：即时 X 限位 → 停止 → 待启动 → 完成
+→ AppLimit_Process：消费九路限位 EXTI 快照并更新调试状态
+→ AppMotion_Process：消费限位事件 → 停止 → 待启动 → 完成
 → 原宏条件允许时，执行 AppSelfTest_Process
 ```
 
-运动任务中的三个处理分支仍是独立 `if`，没有改成 `else if`。运动安全检查仍即时读取三路 X 限位，没有复用 10 ms 采样缓存。没有新增 RTOS、消息队列、软件定时器、UART 中断、DMA 或关中断区。
+运动任务中的三个处理分支仍是独立 `if`，没有改成 `else if`。启动前仍直接读取限位电平；运行中由九路 EXTI 上升沿在 ISR 中停止 X 轴定时器和驱动，主循环负责状态清理及应答。没有新增 RTOS、消息队列、软件定时器、UART 中断或 DMA。
 
 原 100 ms、200 ms、1 ms 阻塞等待保留在原有操作之间，均已标注“阻塞延时，建议后续改为状态机定时器替代”。原来未调用的 TMC 初始化中的 10 ms 等待也保留并标注。
 

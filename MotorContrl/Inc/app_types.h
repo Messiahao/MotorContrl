@@ -73,7 +73,6 @@ typedef struct
 
 typedef struct
 {
-  uint32_t limit_gpio_poll_tick;
   volatile uint8_t limit_gpio_sample_valid;
   volatile uint8_t limit_pc6_level;
   volatile uint8_t limit_pb15_level;

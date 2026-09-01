@@ -9,7 +9,10 @@ extern "C" {
 
 /* Values copied from the working-tree baseline. Do not retune in this refactor. */
 #define LIMIT_GPIO_STATIC_TEST 0U
-#define LIMIT_GPIO_POLL_PERIOD_MS 10U
+/* EE-SX951P-R OUT1 is selected: MCU high means limit/fault active. */
+#define LIMIT_GPIO_ACTIVE_LEVEL 1U
+#define LIMIT_GPIO_EXTI_PRIORITY 1U
+#define LIMIT_GPIO_EXTI_SUBPRIORITY 0U
 #define SERIAL_TEST_FRAME_SIZE 14U
 #define SERIAL_PROTOCOL_STAGE1_TEST 1U
 #define SERIAL_MOTION_MIN_SPEED_HZ 1000U

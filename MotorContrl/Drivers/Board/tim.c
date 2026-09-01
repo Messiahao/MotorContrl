@@ -345,3 +345,10 @@ void BspTim_WriteXDisableUpdate(void)
 {
   __HAL_TIM_DISABLE_IT(&htim2, TIM_IT_UPDATE);
 }
+
+void BspTim_WriteXEmergencyStop(void)
+{
+  __HAL_TIM_DISABLE_IT(&htim2, TIM_IT_UPDATE);
+  /* Keep the HAL channel state synchronized for the next motion command. */
+  (void)HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_2);
+}

@@ -22,6 +22,8 @@
 #include "config.h"
 #include "system_clock.h"
 #include "app_scheduler.h"
+#include "app_limit.h"
+#include "gpio.h"
 
 /* ISR-owned variables remain in this translation unit with their original types.
    Foreground modules receive their addresses through AppMotionIrq. */
@@ -203,6 +205,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       serial_motion_active = 0U;
       serial_motion_done = 1U;
     }
+  }
+}
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  if (AppLimit_OnExti(GPIO_Pin) != 0U)
+  {
+    serial_motion_active = 0U;
+    serial_motion_done = 0U;
   }
 }
 
