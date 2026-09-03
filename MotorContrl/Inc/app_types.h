@@ -4,24 +4,37 @@
 #include <stdint.h>
 #include "config.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* Types only: no business-variable definitions or extern declarations. */
 typedef struct
 {
   uint8_t serial_test_rx_frame[SERIAL_TEST_FRAME_SIZE];
   uint8_t serial_test_rx_index;
-  volatile uint32_t serial_test_command_count;
-  volatile uint32_t serial_test_frame_error_count;
-  volatile uint32_t serial_test_rx_byte_count;
-  volatile uint32_t serial_test_uart_error_count;
-  volatile uint8_t serial_test_last_rx_byte;
-  volatile uint8_t serial_test_last_frame_ok;
-  volatile uint8_t serial_test_last_response_ok;
-  volatile uint32_t serial_test_build_marker;
 } AppProtocolState;
+
+typedef struct
+{
+  volatile uint32_t ioin;
+  volatile uint8_t spi_ok;
+  volatile uint8_t spi_test_done;
+  volatile uint32_t gconf;
+  volatile uint8_t gconf_ok;
+  volatile uint8_t gconf_test_done;
+  volatile uint32_t gstat;
+  volatile uint8_t gstat_test_done;
+  volatile uint32_t gstat_after_clear;
+  volatile uint8_t gstat_uv_cp_clear_ok;
+  volatile uint8_t gstat_clear_test_done;
+  volatile uint32_t chopconf;
+  volatile uint8_t static_read_test_done;
+  volatile uint32_t chopconf_configured;
+  volatile uint8_t low_current_config_ok;
+  volatile uint8_t low_current_config_test_done;
+  volatile uint32_t gstat_enabled;
+  volatile uint32_t drv_status_enabled;
+  volatile uint8_t enable_ok;
+  volatile uint8_t enable_test_done;
+  volatile uint8_t enable_active;
+} AppMotionAxisState;
 
 typedef struct
 {
@@ -55,6 +68,7 @@ typedef struct
   volatile uint32_t serial_motion_mscnt_after;
   volatile uint16_t serial_motion_mscnt_delta;
   volatile uint8_t serial_motion_mscnt_ok;
+  AppMotionAxisState axis_state[SERIAL_MOTION_AXIS_COUNT];
 } AppMotionState;
 
 typedef struct
@@ -86,61 +100,12 @@ typedef struct
   volatile uint16_t limit_active_mask;
 } AppLimitState;
 
-typedef struct
-{
-  uint32_t x_tmc5160_spi_test_tick;
-  uint8_t x_tmc5160_spi_test_pending;
-  volatile uint32_t x_tmc5160_ioin;
-  volatile uint8_t x_tmc5160_spi_ok;
-  volatile uint8_t x_tmc5160_spi_test_done;
-  volatile uint32_t x_tmc5160_gconf;
-  volatile uint8_t x_tmc5160_gconf_ok;
-  volatile uint8_t x_tmc5160_gconf_test_done;
-  volatile uint32_t x_tmc5160_gstat;
-  volatile uint8_t x_tmc5160_gstat_test_done;
-  uint32_t x_tmc5160_gstat_clear_tick;
-  uint8_t x_tmc5160_gstat_clear_pending;
-  volatile uint32_t x_tmc5160_gstat_after_clear;
-  volatile uint8_t x_tmc5160_gstat_uv_cp_clear_ok;
-  volatile uint8_t x_tmc5160_gstat_clear_test_done;
-  volatile uint32_t x_tmc5160_chopconf;
-  volatile uint8_t x_tmc5160_static_read_test_done;
-  volatile uint32_t x_tmc5160_chopconf_configured;
-  volatile uint8_t x_tmc5160_low_current_config_ok;
-  volatile uint8_t x_tmc5160_low_current_config_test_done;
-  uint32_t x_tmc5160_enable_test_tick;
-  uint8_t x_tmc5160_enable_test_pending;
-  volatile uint32_t x_tmc5160_gstat_enabled;
-  volatile uint32_t x_tmc5160_drv_status_enabled;
-  volatile uint8_t x_tmc5160_enable_test_ok;
-  volatile uint8_t x_tmc5160_enable_test_done;
-  volatile uint8_t x_tmc5160_enable_test_active;
-  uint32_t x_tmc5160_step_test_tick;
-  uint8_t x_tmc5160_step_test_state;
-  volatile uint32_t x_tmc5160_mscnt_before_step;
-  volatile uint32_t x_tmc5160_mscnt_after_step;
-  volatile uint16_t x_tmc5160_mscnt_step_delta;
-  volatile uint8_t x_tmc5160_step_test_ok;
-  volatile uint8_t x_tmc5160_step_test_done;
-  uint32_t x_tmc5160_multi_step_test_tick;
-  uint8_t x_tmc5160_multi_step_test_state;
-  uint8_t x_tmc5160_multi_step_test_count;
-  volatile uint32_t x_tmc5160_mscnt_before_multi_step;
-  volatile uint32_t x_tmc5160_mscnt_after_multi_step;
-  volatile uint16_t x_tmc5160_mscnt_multi_step_delta;
-  volatile uint8_t x_tmc5160_multi_step_test_ok;
-  volatile uint8_t x_tmc5160_multi_step_test_done;
-  uint32_t x_tmc5160_motion_test_start_tick;
-  uint8_t x_tmc5160_motion_test_state;
-  volatile uint8_t x_tmc5160_motion_test_active;
-  volatile uint8_t x_tmc5160_motion_test_done;
-} AppTmcState;
-
 /* References to the original volatile ISR objects; never copy/snapshot these values. */
 typedef struct
 {
   volatile uint8_t *serial_motion_active;
   volatile uint8_t *serial_motion_done;
+  volatile uint8_t *serial_motion_axis;
   volatile uint8_t *serial_motion_continuous;
   volatile uint32_t *serial_motion_pulses_done;
   volatile uint32_t *serial_motion_target_steps;
@@ -156,9 +121,5 @@ typedef struct
   volatile uint8_t *serial_motion_profile_error;
   uint8_t (*write_initial_speed)(void);
 } AppMotionIrq;
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* MOTOR_APP_TYPES_H */

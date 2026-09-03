@@ -11,7 +11,7 @@
 /*
  * Store the last toggle timestamp
  */
-static uint32_t led_last_tick = 0;
+static uint32_t led_last_tick;
 
 /*
  * LED current state
@@ -19,7 +19,7 @@ static uint32_t led_last_tick = 0;
  * 0 : LED OFF
  * 1 : LED ON
  */
-static uint8_t led_state = 0;
+static uint8_t led_state;
 
 /*
  * AppLed_Init()
@@ -69,9 +69,7 @@ void AppLed_Init(void)
 void AppLed_Process(void)
 {
 
-    uint32_t current_tick;
-
-    current_tick = HAL_GetTick();
+    uint32_t current_tick = HAL_GetTick();
 
     /*
      * Check whether 500ms has elapsed.
@@ -107,18 +105,7 @@ void AppLed_Process(void)
          * GPIO HIGH
          * LED OFF
          */
-        if(led_state)
-        {
-
-            BspLed_Write(GPIO_PIN_RESET);
-
-        }
-        else
-        {
-
-            BspLed_Write(GPIO_PIN_SET);
-
-        }
+        BspLed_Write((led_state != 0U) ? GPIO_PIN_RESET : GPIO_PIN_SET);
 
     }
 

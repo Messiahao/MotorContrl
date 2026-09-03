@@ -2,19 +2,13 @@
 #include "gpio.h"
 #include "tim.h"
 
-volatile AppLimitState g_limit_debug;
-volatile uint32_t g_limit_debug_sample_count;
-volatile uint32_t g_limit_debug_gpio_c_idr;
-volatile uint8_t g_limit_debug_pc6_direct;
 volatile uint16_t g_limit_irq_active_mask;
 volatile uint16_t g_limit_irq_event_mask;
-volatile uint32_t g_limit_irq_event_count;
 
 void AppLimit_Init(AppLimitState *limits)
 {
   g_limit_irq_active_mask = BspGpio_ReadLimitActiveMask();
   g_limit_irq_event_mask = 0U;
-  g_limit_irq_event_count = 0U;
   limits->limit_gpio_sample_valid = 0U;
   AppLimit_Process(limits);
   BspGpio_EnableLimitInterrupts();
@@ -30,9 +24,6 @@ void AppLimit_Process(AppLimitState *limits)
   {
     return;
   }
-  g_limit_debug_gpio_c_idr = X_LIM_L_GPIO_Port->IDR;
-  g_limit_debug_pc6_direct =
-      ((g_limit_debug_gpio_c_idr & X_LIM_L_Pin) != 0U) ? 1U : 0U;
   limits->limit_pc6_level =
       ((active_mask & (1U << BSP_GPIO_X_LIMIT_L_BIT)) != 0U) ? 1U : 0U;
   limits->limit_pb15_level =
@@ -53,15 +44,15 @@ void AppLimit_Process(AppLimitState *limits)
       ((active_mask & (1U << BSP_GPIO_Z_LIMIT_R_BIT)) != 0U) ? 1U : 0U;
   limits->limit_active_mask = active_mask;
   limits->limit_gpio_sample_valid = 1U;
-  g_limit_debug_sample_count++;
-  g_limit_debug = *limits;
 }
 
-uint8_t AppLimit_OnExti(uint16_t gpio_pin)
+uint8_t AppLimit_OnExti(uint16_t gpio_pin, uint8_t active_axis)
 {
   uint16_t limit_bit;
+  uint16_t axis_limit_mask;
 
   limit_bit = BspGpio_LimitBitFromPin(gpio_pin);
+  axis_limit_mask = BspGpio_LimitMaskForAxis(active_axis);
   if (limit_bit == 0U)
   {
     return 0U;
@@ -70,10 +61,9 @@ uint8_t AppLimit_OnExti(uint16_t gpio_pin)
   {
     g_limit_irq_active_mask |= limit_bit;
     g_limit_irq_event_mask |= limit_bit;
-    g_limit_irq_event_count++;
-    if ((limit_bit & X_LIMIT_ACTIVE_MASK) != 0U)
+    if ((limit_bit & axis_limit_mask) != 0U)
     {
-      BspTim_WriteXEmergencyStop();
+      BspTim_WriteAxisEmergencyStop(active_axis);
       /* Keep ENN low so the stopped motor retains holding torque. */
       return 1U;
     }

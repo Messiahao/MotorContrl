@@ -18,6 +18,8 @@ static GPIO_TypeDef ports[3] = {{0,65535}, {1,65535}, {2,65535}};
 static USART_TypeDef uart_instance;
 UART_HandleTypeDef huart3 = { &uart_instance };
 TIM_HandleTypeDef htim2 = { (void *)0x40000000 };
+TIM_HandleTypeDef htim3 = { (void *)0x40000400 };
+TIM_HandleTypeDef htim4 = { (void *)0x40000800 };
 SPI_HandleTypeDef hspi1;
 #define GPIOA (&ports[0])
 #define GPIOB (&ports[1])
@@ -43,11 +45,23 @@ SPI_HandleTypeDef hspi1;
 #define GPIO_PIN_14 (1U << 14)
 #define GPIO_PIN_15 (1U << 15)
 #define TIM2 ((void *)0x40000000)
+#define TIM3 ((void *)0x40000400)
+#define TIM4 ((void *)0x40000800)
 #define TIM2_IRQn 28
+#define TIM3_IRQn 29
+#define TIM4_IRQn 30
+#define EXTI9_5_IRQn 23
+#define EXTI15_10_IRQn 40
+#define TIM_CHANNEL_1 0
 #define TIM_CHANNEL_2 4
+#define TIM_CHANNEL_4 12
+#define TIM_FLAG_CC1 2
 #define TIM_FLAG_CC2 4
+#define TIM_FLAG_CC4 16
 #define TIM_FLAG_UPDATE 1
+#define TIM_IT_CC1 2
 #define TIM_IT_CC2 4
+#define TIM_IT_CC4 16
 #define TIM_IT_UPDATE 1
 #define UART_FLAG_ORE 8
 #define UART_FLAG_RXNE 32
@@ -56,8 +70,10 @@ SPI_HandleTypeDef hspi1;
 
 static uint32_t tick, input_levels[3] = {65535,65535,65535};
 static uint32_t output_levels[3], registers_tmc[128];
+static uint32_t registers_tmc_y[128], registers_tmc_z[128];
 static uint32_t period, compare_value, counter, interrupt_enable, pwm_running;
-static unsigned fault, tx_failure, irq_after_gpio, pulse_direction;
+static unsigned fault, tx_failure, irq_after_gpio, pulse_direction, pwm_axis, pwm_channel;
+static unsigned step_mode_port, step_mode_pin, step_mode;
 static unsigned ore, rx_read, rx_count;
 static uint8_t rx_data[4096];
 static uint16_t i2c_address;
@@ -79,9 +95,12 @@ static void Trace(uint32_t tag, uint32_t a, uint32_t b, uint32_t c)
 }
 static void MockPulse(void)
 {
+    uint32_t *registers = pwm_axis==1 ? registers_tmc_y :
+                          pwm_axis==2 ? registers_tmc_z : registers_tmc;
+    TIM_HandleTypeDef *timer = pwm_axis==1 ? &htim3 : pwm_axis==2 ? &htim4 : &htim2;
     if (pwm_running) {
-        registers_tmc[0x6a] = (registers_tmc[0x6a] + (pulse_direction ? 1023 : 1)) & 1023;
-        HAL_TIM_PeriodElapsedCallback(&htim2);
+        registers[0x6a] = (registers[0x6a] + (pulse_direction ? 1023 : 1)) & 1023;
+        HAL_TIM_PeriodElapsedCallback(timer);
     }
 }
 static uint32_t HAL_GetTick(void) { Trace(1,tick,0,0); return tick; }
@@ -104,18 +123,24 @@ static void HAL_GPIO_WritePin(GPIO_TypeDef *port, uint16_t pin, GPIO_PinState le
     if (port==GPIOA && pin==GPIO_PIN_1 && level && !(output_levels[0]&pin))
         registers_tmc[0x6a] = (registers_tmc[0x6a]+1)&1023;
     if (level) output_levels[port->id] |= pin; else output_levels[port->id] &= ~pin;
-    if (port==GPIOA && pin==GPIO_PIN_0) pulse_direction = level;
+    if ((port==GPIOA && pin==GPIO_PIN_0) ||
+        (port==GPIOB && (pin==GPIO_PIN_0 || pin==GPIO_PIN_5))) pulse_direction = level;
 }
 static void HAL_GPIO_Init(GPIO_TypeDef *port, GPIO_InitTypeDef *cfg)
 {
     Trace(5,port->id,cfg->Pin,cfg->Mode); Trace(6,cfg->Pull,cfg->Speed,0);
+    step_mode_port=port->id; step_mode_pin=cfg->Pin; step_mode=cfg->Mode;
 }
 static void HAL_NVIC_SetPriority(unsigned irq, unsigned preempt, unsigned sub) { Trace(7,irq,preempt,sub); }
 static void HAL_NVIC_ClearPendingIRQ(unsigned irq) { Trace(8,irq,0,0); }
+static void HAL_NVIC_DisableIRQ(unsigned irq) { Trace(9,irq,0,0); }
 static void HAL_NVIC_EnableIRQ(unsigned irq) { Trace(9,irq,0,0); }
 static HAL_StatusTypeDef HAL_TIM_PWM_Start(TIM_HandleTypeDef *htim, unsigned channel)
 {
-    (void)htim; Trace(10,channel,0,0); pwm_running = fault==5 ? 0 : 1; return fault==5 ? HAL_ERROR : HAL_OK;
+    Trace(10,channel,0,0);
+    pwm_axis = htim->Instance==TIM3 ? 1 : htim->Instance==TIM4 ? 2 : 0;
+    pwm_channel = channel;
+    pwm_running = fault==5 ? 0 : 1; return fault==5 ? HAL_ERROR : HAL_OK;
 }
 static HAL_StatusTypeDef HAL_TIM_PWM_Stop(TIM_HandleTypeDef *htim, unsigned channel)
 {
@@ -127,6 +152,10 @@ static HAL_StatusTypeDef HAL_TIM_PWM_Stop(TIM_HandleTypeDef *htim, unsigned chan
 #define __HAL_TIM_CLEAR_FLAG(h,v) Trace(15,(v),0,0)
 #define __HAL_TIM_DISABLE_IT(h,v) (Trace(16,(v),0,0),interrupt_enable&=~(v))
 #define __HAL_TIM_ENABLE_IT(h,v) (Trace(17,(v),0,0),interrupt_enable|=(v))
+#define __HAL_GPIO_EXTI_CLEAR_IT(v) Trace(29,(v),0,0)
+static uint32_t __get_PRIMASK(void) { return 0U; }
+static void __disable_irq(void) {}
+static void __enable_irq(void) {}
 static unsigned MockUartFlag(unsigned flag)
 {
     if(flag==UART_FLAG_ORE) { Trace(18,flag,ore,0); return ore; }
@@ -142,20 +171,32 @@ static HAL_StatusTypeDef HAL_UART_Transmit(UART_HandleTypeDef *uart, uint8_t *da
     for(i=0;i<len;i++) Trace(21,i,data[i],0);
     return tx_failure ? HAL_ERROR : HAL_OK;
 }
+static uint32_t MockTmcReadAxis(unsigned axis, unsigned address);
+static void MockTmcWriteAxis(unsigned axis, unsigned address, uint32_t value);
 static uint32_t MockTmcRead(unsigned address)
 {
-    uint32_t value=registers_tmc[address];
+    return MockTmcReadAxis(0,address);
+}
+static uint32_t MockTmcReadAxis(unsigned axis, unsigned address)
+{
+    uint32_t *registers = axis==1 ? registers_tmc_y : axis==2 ? registers_tmc_z : registers_tmc;
+    uint32_t value=registers[address];
     if(fault==1 && address==0x04) value=0;
     if(fault==2 && address==0x00) value^=1;
     if(fault==3 && address==0x01) value|=4;
     if(fault==4 && address==0x6c) value^=1;
     if(fault==8 && address==0x01 && !(output_levels[2]&GPIO_PIN_3)) value|=2;
-    Trace(22,address,value,0); return value;
+    Trace(22,address,value,axis); return value;
 }
 static void MockTmcWrite(unsigned address, uint32_t value)
 {
-    Trace(23,address,value,0);
-    if(address==0x01) registers_tmc[address]&=~value; else registers_tmc[address]=value;
+    MockTmcWriteAxis(0,address,value);
+}
+static void MockTmcWriteAxis(unsigned axis, unsigned address, uint32_t value)
+{
+    uint32_t *registers = axis==1 ? registers_tmc_y : axis==2 ? registers_tmc_z : registers_tmc;
+    Trace(23,address,value,axis);
+    if(address==0x01) registers[address]&=~value; else registers[address]=value;
 }
 static void HAL_Init(void) { Trace(24,0,0,0); }
 void SystemClock_Config(void) { Trace(25,0,0,0); }

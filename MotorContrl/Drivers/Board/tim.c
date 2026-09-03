@@ -19,14 +19,15 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "tim.h"
+#include "config.h"
 
 /* USER CODE BEGIN 0 */
 
 /* USER CODE END 0 */
 
 TIM_HandleTypeDef htim2;
-static TIM_HandleTypeDef htim3;
-static TIM_HandleTypeDef htim4;
+TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim4;
 
 /* TIM2 init function */
 static void MX_TIM2_Init(void)
@@ -320,35 +321,98 @@ void BspTim4_Init(void)
   MX_TIM4_Init();
 }
 
-void BspTim_WriteXSetupInterrupt(void)
+static const BspTimMotionAxis *BspTim_GetAxis(uint8_t axis)
 {
-  __HAL_TIM_SET_COUNTER(&htim2, 0U);
-  __HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_CC2 | TIM_FLAG_UPDATE);
-  __HAL_TIM_DISABLE_IT(&htim2, TIM_IT_CC2);
-  __HAL_TIM_ENABLE_IT(&htim2, TIM_IT_UPDATE);
-  HAL_NVIC_SetPriority(TIM2_IRQn, BSP_TIM2_IRQ_PRIORITY, BSP_TIM2_IRQ_SUBPRIORITY);
-  HAL_NVIC_ClearPendingIRQ(TIM2_IRQn);
-  HAL_NVIC_EnableIRQ(TIM2_IRQn);
+  static const BspTimMotionAxis axes[SERIAL_MOTION_AXIS_COUNT] = {
+    {&htim2, TIM_CHANNEL_2, TIM_FLAG_CC2, TIM_IT_CC2, TIM2_IRQn},
+    {&htim3, TIM_CHANNEL_4, TIM_FLAG_CC4, TIM_IT_CC4, TIM3_IRQn},
+    {&htim4, TIM_CHANNEL_1, TIM_FLAG_CC1, TIM_IT_CC1, TIM4_IRQn}
+  };
+
+  if ((axis < SERIAL_MOTION_AXIS_X) || (axis > SERIAL_MOTION_AXIS_Z))
+  {
+    return 0;
+  }
+  return &axes[axis - SERIAL_MOTION_AXIS_X];
 }
 
-HAL_StatusTypeDef BspTim_WriteXStart(void)
+uint8_t BspTim_IsAxisTimer(uint8_t axis, const TIM_HandleTypeDef *htim)
 {
-  return HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+  const BspTimMotionAxis *axis_timer = BspTim_GetAxis(axis);
+
+  return (axis_timer != 0) &&
+         (htim->Instance == axis_timer->handle->Instance);
 }
 
-HAL_StatusTypeDef BspTim_WriteXStop(void)
+uint8_t BspTim_WriteAxisPeriod(uint8_t axis, uint32_t period_ticks)
 {
-  return HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_2);
+  const BspTimMotionAxis *axis_timer = BspTim_GetAxis(axis);
+
+  if (axis_timer == 0)
+  {
+    return 0U;
+  }
+  __HAL_TIM_SET_AUTORELOAD(axis_timer->handle, period_ticks - 1U);
+  __HAL_TIM_SET_COMPARE(axis_timer->handle, axis_timer->channel,
+                        period_ticks / 2U);
+  return 1U;
 }
 
-void BspTim_WriteXDisableUpdate(void)
+uint8_t BspTim_WriteAxisSetupInterrupt(uint8_t axis)
 {
-  __HAL_TIM_DISABLE_IT(&htim2, TIM_IT_UPDATE);
+  const BspTimMotionAxis *axis_timer = BspTim_GetAxis(axis);
+
+  if (axis_timer == 0)
+  {
+    return 0U;
+  }
+  __HAL_TIM_SET_COUNTER(axis_timer->handle, 0U);
+  __HAL_TIM_CLEAR_FLAG(axis_timer->handle,
+                       axis_timer->compare_flag | TIM_FLAG_UPDATE);
+  __HAL_TIM_DISABLE_IT(axis_timer->handle, axis_timer->compare_interrupt);
+  __HAL_TIM_ENABLE_IT(axis_timer->handle, TIM_IT_UPDATE);
+  HAL_NVIC_SetPriority(axis_timer->irqn, BSP_TIM2_IRQ_PRIORITY,
+                       BSP_TIM2_IRQ_SUBPRIORITY);
+  HAL_NVIC_ClearPendingIRQ(axis_timer->irqn);
+  HAL_NVIC_EnableIRQ(axis_timer->irqn);
+  return 1U;
 }
 
-void BspTim_WriteXEmergencyStop(void)
+HAL_StatusTypeDef BspTim_WriteAxisStart(uint8_t axis)
 {
-  __HAL_TIM_DISABLE_IT(&htim2, TIM_IT_UPDATE);
+  const BspTimMotionAxis *axis_timer = BspTim_GetAxis(axis);
+
+  if (axis_timer == 0)
+  {
+    return HAL_ERROR;
+  }
+  return HAL_TIM_PWM_Start(axis_timer->handle, axis_timer->channel);
+}
+
+HAL_StatusTypeDef BspTim_WriteAxisStop(uint8_t axis)
+{
+  const BspTimMotionAxis *axis_timer = BspTim_GetAxis(axis);
+
+  if (axis_timer == 0)
+  {
+    return HAL_ERROR;
+  }
+  return HAL_TIM_PWM_Stop(axis_timer->handle, axis_timer->channel);
+}
+
+void BspTim_WriteAxisDisableUpdate(uint8_t axis)
+{
+  const BspTimMotionAxis *axis_timer = BspTim_GetAxis(axis);
+
+  if (axis_timer != 0)
+  {
+    __HAL_TIM_DISABLE_IT(axis_timer->handle, TIM_IT_UPDATE);
+  }
+}
+
+void BspTim_WriteAxisEmergencyStop(uint8_t axis)
+{
+  BspTim_WriteAxisDisableUpdate(axis);
   /* Keep the HAL channel state synchronized for the next motion command. */
-  (void)HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_2);
+  (void)BspTim_WriteAxisStop(axis);
 }

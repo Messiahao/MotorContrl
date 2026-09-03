@@ -29,6 +29,7 @@
    Foreground modules receive their addresses through AppMotionIrq. */
 volatile uint8_t serial_motion_active;
 volatile uint8_t serial_motion_done;
+volatile uint8_t serial_motion_axis;
 volatile uint8_t serial_motion_continuous;
 volatile uint32_t serial_motion_pulses_done;
 volatile uint32_t serial_motion_target_steps;
@@ -158,8 +159,10 @@ static uint8_t Serial_Motion_ApplySpeed(uint16_t speed_hz)
     return 0U;
   }
 
-  __HAL_TIM_SET_AUTORELOAD(&htim2, period_ticks - 1U);
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, period_ticks / 2U);
+  if (BspTim_WriteAxisPeriod(serial_motion_axis, period_ticks) == 0U)
+  {
+    return 0U;
+  }
   serial_motion_current_speed_hz = speed_hz;
   serial_motion_last_period_ticks = period_ticks;
   if (speed_hz > serial_motion_peak_speed_hz)
@@ -185,22 +188,23 @@ static uint8_t Serial_Motion_ApplySpeed(uint16_t speed_hz)
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-  if ((htim->Instance == TIM2) && (serial_motion_active != 0U))
+  if ((serial_motion_active != 0U) &&
+      (BspTim_IsAxisTimer(serial_motion_axis, htim) != 0U))
   {
     serial_motion_pulses_done++;
     if ((serial_motion_continuous == 0U) &&
         (serial_motion_pulses_done >= serial_motion_target_steps))
     {
-      HAL_TIM_PWM_Stop(htim, TIM_CHANNEL_2);
-      __HAL_TIM_DISABLE_IT(htim, TIM_IT_UPDATE);
+      (void)BspTim_WriteAxisStop(serial_motion_axis);
+      BspTim_WriteAxisDisableUpdate(serial_motion_axis);
       serial_motion_active = 0U;
       serial_motion_done = 1U;
     }
     else if (Serial_Motion_ApplySpeed(
                  Serial_Motion_ProfileSpeed(serial_motion_pulses_done)) == 0U)
     {
-      HAL_TIM_PWM_Stop(htim, TIM_CHANNEL_2);
-      __HAL_TIM_DISABLE_IT(htim, TIM_IT_UPDATE);
+      (void)BspTim_WriteAxisStop(serial_motion_axis);
+      BspTim_WriteAxisDisableUpdate(serial_motion_axis);
       serial_motion_profile_error = SERIAL_MOTION_ERROR_TIMER;
       serial_motion_active = 0U;
       serial_motion_done = 1U;
@@ -210,7 +214,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-  if (AppLimit_OnExti(GPIO_Pin) != 0U)
+  if (AppLimit_OnExti(GPIO_Pin, serial_motion_axis) != 0U)
   {
     serial_motion_active = 0U;
     serial_motion_done = 0U;
@@ -226,6 +230,7 @@ static uint8_t Main_WriteInitialSpeed(void)
 static const AppMotionIrq motion_irq = {
   &serial_motion_active,
   &serial_motion_done,
+  &serial_motion_axis,
   &serial_motion_continuous,
   &serial_motion_pulses_done,
   &serial_motion_target_steps,

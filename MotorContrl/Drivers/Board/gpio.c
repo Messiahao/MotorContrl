@@ -154,14 +154,14 @@ void BspGpio_Write(GPIO_TypeDef *port, uint16_t pin, GPIO_PinState level)
   HAL_GPIO_WritePin(port, pin, level);
 }
 
-void BspGpio_WriteXStepMode(uint32_t mode)
+void BspGpio_WriteStepMode(GPIO_TypeDef *port, uint16_t pin, uint32_t mode)
 {
-  GPIO_InitTypeDef x_step_gpio = {0};
-  x_step_gpio.Pin = X_STEP_Pin;
-  x_step_gpio.Mode = mode;
-  x_step_gpio.Pull = GPIO_NOPULL;
-  x_step_gpio.Speed = GPIO_SPEED_FREQ_HIGH;
-  HAL_GPIO_Init(X_STEP_GPIO_Port, &x_step_gpio);
+  GPIO_InitTypeDef step_gpio = {0};
+  step_gpio.Pin = pin;
+  step_gpio.Mode = mode;
+  step_gpio.Pull = GPIO_NOPULL;
+  step_gpio.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(port, &step_gpio);
 }
 
 GPIO_PinState BspGpio_ReadLimitPin(uint16_t pin)
@@ -218,7 +218,19 @@ uint16_t BspGpio_ReadLimitActiveMask(void)
   return limit_mask;
 }
 
-uint16_t BspGpio_ReadXLimitMask(void)
+uint16_t BspGpio_LimitMaskForAxis(uint8_t axis)
 {
-  return (uint16_t)(BspGpio_ReadLimitActiveMask() & X_LIMIT_ACTIVE_MASK);
+  switch (axis)
+  {
+    case SERIAL_MOTION_AXIS_X: return X_LIMIT_ACTIVE_MASK;
+    case SERIAL_MOTION_AXIS_Y: return Y_LIMIT_ACTIVE_MASK;
+    case SERIAL_MOTION_AXIS_Z: return Z_LIMIT_CHECK_MASK;
+    default: return 0U;
+  }
+}
+
+uint16_t BspGpio_ReadAxisLimitMask(uint8_t axis)
+{
+  return (uint16_t)(BspGpio_ReadLimitActiveMask() &
+                    BspGpio_LimitMaskForAxis(axis));
 }

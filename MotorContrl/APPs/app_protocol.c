@@ -3,7 +3,7 @@
 
 void AppProtocol_Init(AppProtocolState *protocol)
 {
-  protocol->serial_test_build_marker = SERIAL_BUILD_MARKER;
+  protocol->serial_test_rx_index = 0U;
 }
 
 void AppProtocol_Process(AppProtocolState *protocol,
@@ -11,6 +11,7 @@ void AppProtocol_Process(AppProtocolState *protocol,
                          void *context)
 {
   uint8_t byte;
+  uint8_t frame_ok;
   static const uint8_t response[SERIAL_TEST_FRAME_SIZE] = {
     SERIAL_RESPONSE_HEAD, SERIAL_RESPONSE_HEAD, SERIAL_COMMAND_TEST, SERIAL_SUBCOMMAND_DEFAULT,
     SERIAL_DATA_ZERO, SERIAL_DATA_ZERO, SERIAL_DATA_ZERO, SERIAL_DATA_ZERO,
@@ -20,14 +21,11 @@ void AppProtocol_Process(AppProtocolState *protocol,
   if (BspUsart_ReadOverrun() != 0U)
   {
     BspUsart_WriteClearOverrun();
-    protocol->serial_test_uart_error_count++;
   }
 
   while (BspUsart_ReadAvailable() != 0U)
   {
     byte = BspUsart_ReadByte();
-    protocol->serial_test_rx_byte_count++;
-    protocol->serial_test_last_rx_byte = byte;
 
     if ((protocol->serial_test_rx_index == 0U) && (byte != SERIAL_REQUEST_HEAD))
     {
@@ -46,7 +44,7 @@ void AppProtocol_Process(AppProtocolState *protocol,
     }
 
     protocol->serial_test_rx_index = 0U;
-    protocol->serial_test_last_frame_ok =
+    frame_ok =
         (protocol->serial_test_rx_frame[SERIAL_FRAME_HEAD0_INDEX] == SERIAL_REQUEST_HEAD) &&
         (protocol->serial_test_rx_frame[SERIAL_FRAME_HEAD1_INDEX] == SERIAL_REQUEST_HEAD) &&
         (protocol->serial_test_rx_frame[SERIAL_FRAME_COMMAND_INDEX] == SERIAL_COMMAND_TEST) &&
@@ -62,12 +60,10 @@ void AppProtocol_Process(AppProtocolState *protocol,
         (protocol->serial_test_rx_frame[SERIAL_FRAME_TAIL0_INDEX] == SERIAL_REQUEST_TAIL) &&
         (protocol->serial_test_rx_frame[SERIAL_FRAME_TAIL1_INDEX] == SERIAL_REQUEST_TAIL);
 
-    if (protocol->serial_test_last_frame_ok != 0U)
+    if (frame_ok != 0U)
     {
-      protocol->serial_test_command_count++;
-      protocol->serial_test_last_response_ok =
-          (BspUsart_Write((uint8_t *)response,
-                             SERIAL_TEST_FRAME_SIZE, SERIAL_TX_TIMEOUT_MS) == HAL_OK);
+      (void)BspUsart_Write((uint8_t *)response,
+                           SERIAL_TEST_FRAME_SIZE, SERIAL_TX_TIMEOUT_MS);
     }
     else
     {

@@ -25,7 +25,7 @@ uint8_t BspMcp4728_Write(uint8_t channel, uint16_t code)
 
   /* Multi-Write: command, VREF=VDD/PD=normal/gain=1, code[11:0]. */
   data[0] = (uint8_t)(0x40U | (channel << 1));
-  data[1] = (uint8_t)((code >> 8) & 0x0FU);
+  data[1] = (uint8_t)(code >> 8);
   data[2] = (uint8_t)code;
 
   return (BspI2c_Write(BSP_MCP4728_I2C_ADDRESS, data, 3U,

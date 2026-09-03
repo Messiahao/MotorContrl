@@ -32,9 +32,10 @@ extern "C" {
 
 /* USER CODE END Includes */
 
-/* HAL/ISR ABI exception: declaration only. The unchanged IRQ uses &htim2.
-   Application modules must use BspTim_* instead of sharing this handle. */
+/* HAL/ISR ABI declarations. Application modules use BspTim_* APIs. */
 extern TIM_HandleTypeDef htim2;
+extern TIM_HandleTypeDef htim3;
+extern TIM_HandleTypeDef htim4;
 
 
 
@@ -57,11 +58,22 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 #define BSP_TIM2_IRQ_PRIORITY 2U
 #define BSP_TIM2_IRQ_SUBPRIORITY 0U
 
-void BspTim_WriteXSetupInterrupt(void);
-HAL_StatusTypeDef BspTim_WriteXStart(void);
-HAL_StatusTypeDef BspTim_WriteXStop(void);
-void BspTim_WriteXDisableUpdate(void);
-void BspTim_WriteXEmergencyStop(void);
+typedef struct
+{
+  TIM_HandleTypeDef *handle;
+  uint32_t channel;
+  uint32_t compare_flag;
+  uint32_t compare_interrupt;
+  uint32_t irqn;
+} BspTimMotionAxis;
+
+uint8_t BspTim_IsAxisTimer(uint8_t axis, const TIM_HandleTypeDef *htim);
+uint8_t BspTim_WriteAxisPeriod(uint8_t axis, uint32_t period_ticks);
+uint8_t BspTim_WriteAxisSetupInterrupt(uint8_t axis);
+HAL_StatusTypeDef BspTim_WriteAxisStart(uint8_t axis);
+HAL_StatusTypeDef BspTim_WriteAxisStop(uint8_t axis);
+void BspTim_WriteAxisDisableUpdate(uint8_t axis);
+void BspTim_WriteAxisEmergencyStop(uint8_t axis);
 
 /* USER CODE END Prototypes */
 

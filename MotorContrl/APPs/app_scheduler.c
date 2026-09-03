@@ -3,7 +3,6 @@
 #include "app_motion.h"
 #include "app_aux_output.h"
 #include "app_limit.h"
-#include "app_self_test.h"
 #include "app_led.h"
 #include "app_light.h"
 #include "gpio.h"
@@ -11,7 +10,6 @@
 #include "i2c.h"
 #include "spi.h"
 #include "tim.h"
-#include "mcp4728.h"
 
 typedef struct
 {
@@ -19,54 +17,84 @@ typedef struct
   AppMotionState motion;
   AppAuxState aux;
   AppLimitState limits;
-  AppTmcState tmc;
   const AppMotionIrq *irq;
 } AppRuntime;
 
 /* Owned here. Other modules receive explicit pointers, never extern objects. */
 static AppRuntime runtime;
-static const TMC5160_HandleTypeDef x_tmc5160 = {
-  X_CS_GPIO_Port, X_CS_Pin, X_EN_GPIO_Port, X_EN_Pin
+static const AppMotionAxisConfig motion_axes[SERIAL_MOTION_AXIS_COUNT] = {
+  {
+    .protocol_axis = SERIAL_MOTION_AXIS_X,
+    .tmc = {X_CS_GPIO_Port, X_CS_Pin, X_EN_GPIO_Port, X_EN_Pin},
+    .direction_port = X_DIR_GPIO_Port,
+    .direction_pin = X_DIR_Pin,
+    .step_port = X_STEP_GPIO_Port,
+    .step_pin = X_STEP_Pin,
+    .limit_mask = X_LIMIT_ACTIVE_MASK,
+    .ihold = X_MOTION_IHOLD,
+    .irun = X_MOTION_IRUN,
+    .toff = X_MOTION_TOFF
+  },
+  {
+    .protocol_axis = SERIAL_MOTION_AXIS_Y,
+    .tmc = {Y_CS_GPIO_Port, Y_CS_Pin, Y_EN_GPIO_Port, Y_EN_Pin},
+    .direction_port = Y_DIR_GPIO_Port,
+    .direction_pin = Y_DIR_Pin,
+    .step_port = Y_STEP_GPIO_Port,
+    .step_pin = Y_STEP_Pin,
+    .limit_mask = Y_LIMIT_ACTIVE_MASK,
+    .ihold = Y_MOTION_IHOLD,
+    .irun = Y_MOTION_IRUN,
+    .toff = Y_MOTION_TOFF
+  },
+  {
+    .protocol_axis = SERIAL_MOTION_AXIS_Z,
+    .tmc = {Z_CS_GPIO_Port, Z_CS_Pin, Z_EN_GPIO_Port, Z_EN_Pin},
+    .direction_port = Z_DIR_GPIO_Port,
+    .direction_pin = Z_DIR_Pin,
+    .step_port = Z_STEP_GPIO_Port,
+    .step_pin = Z_STEP_Pin,
+    .limit_mask = Z_LIMIT_CHECK_MASK,
+    .ihold = Z_MOTION_IHOLD,
+    .irun = Z_MOTION_IRUN,
+    .toff = Z_MOTION_TOFF
+  }
 };
 
 static void Scheduler_ProcessFrame(void *context, const uint8_t *frame)
 {
   AppRuntime *app = context;
+  uint8_t command = frame[SERIAL_FRAME_COMMAND_INDEX];
+  uint8_t subcommand = frame[SERIAL_FRAME_SUBCOMMAND_INDEX];
 
-  if (((frame[SERIAL_FRAME_COMMAND_INDEX] == SERIAL_COMMAND_MOTION) &&
-       (frame[SERIAL_FRAME_SUBCOMMAND_INDEX] == SERIAL_SUBCOMMAND_DEFAULT)) ||
-      ((frame[SERIAL_FRAME_COMMAND_INDEX] == SERIAL_COMMAND_MOTION) &&
-       (frame[SERIAL_FRAME_SUBCOMMAND_INDEX] == SERIAL_SUBCOMMAND_CONTINUOUS)))
+  if (command == SERIAL_COMMAND_MOTION)
   {
-    AppMotion_ProcessStart(&app->motion, app->irq, &app->protocol, frame);
+    if ((subcommand == SERIAL_SUBCOMMAND_DEFAULT) ||
+        (subcommand == SERIAL_SUBCOMMAND_CONTINUOUS))
+    {
+      AppMotion_ProcessStart(&app->motion, app->irq, &app->protocol, frame,
+                             motion_axes, SERIAL_MOTION_AXIS_COUNT);
+    }
+    else if (subcommand == SERIAL_SUBCOMMAND_STOP)
+    {
+      AppMotion_ProcessStop(&app->motion, app->irq, &app->protocol, frame,
+                            motion_axes, SERIAL_MOTION_AXIS_COUNT);
+    }
+    else if (subcommand == SERIAL_SUBCOMMAND_STATUS)
+    {
+      AppMotion_ProcessStatus(&app->motion, app->irq, &app->protocol, frame);
+    }
   }
-  else if ((frame[SERIAL_FRAME_COMMAND_INDEX] == SERIAL_COMMAND_MOTION) &&
-           (frame[SERIAL_FRAME_SUBCOMMAND_INDEX] == SERIAL_SUBCOMMAND_STOP))
-  {
-    AppMotion_ProcessStop(&app->motion, app->irq, &app->protocol, frame);
-  }
-  else if ((frame[SERIAL_FRAME_COMMAND_INDEX] == SERIAL_COMMAND_MOTION) &&
-           (frame[SERIAL_FRAME_SUBCOMMAND_INDEX] == SERIAL_SUBCOMMAND_STATUS))
-  {
-    AppMotion_ProcessStatus(&app->motion, app->irq, &app->protocol, frame);
-  }
-  else if (((frame[SERIAL_FRAME_COMMAND_INDEX] == SERIAL_COMMAND_RELAY) &&
-            (frame[SERIAL_FRAME_SUBCOMMAND_INDEX] == SERIAL_SUBCOMMAND_DEFAULT)) ||
-           ((frame[SERIAL_FRAME_COMMAND_INDEX] == SERIAL_COMMAND_BRAKE) &&
-            (frame[SERIAL_FRAME_SUBCOMMAND_INDEX] == SERIAL_SUBCOMMAND_DEFAULT)))
+  else if (((command == SERIAL_COMMAND_RELAY) ||
+            (command == SERIAL_COMMAND_BRAKE)) &&
+           (subcommand == SERIAL_SUBCOMMAND_DEFAULT))
   {
     AppAuxOutput_Process(&app->aux, &app->protocol, frame);
   }
-  else if ((frame[SERIAL_FRAME_COMMAND_INDEX] == SERIAL_COMMAND_LIGHT) &&
-           (frame[SERIAL_FRAME_SUBCOMMAND_INDEX] == SERIAL_SUBCOMMAND_DEFAULT))
+  else if ((command == SERIAL_COMMAND_LIGHT) &&
+           (subcommand == SERIAL_SUBCOMMAND_DEFAULT))
   {
     AppLight_Process(&app->protocol, frame);
-  }
-  else
-  {
-    app->protocol.serial_test_last_frame_ok = 0U;
-    app->protocol.serial_test_frame_error_count++;
-    app->protocol.serial_test_last_response_ok = 0U;
   }
 }
 
@@ -83,13 +111,9 @@ void AppScheduler_Init(const AppMotionIrq *irq)
   BspTim4_Init();
   BspUsart3_Init();
   AppLed_Init();
-  AppMotion_Init();
+  AppMotion_Init(motion_axes, SERIAL_MOTION_AXIS_COUNT);
   AppLimit_Init(&runtime.limits);
-  AppSelfTest_Init(&runtime.tmc);
   AppProtocol_Init(&runtime.protocol);
-  AppAuxOutput_Init();
-  BspMcp4728_Init();
-  AppLight_Init();
   /* Do not call BspTmc5160_Init: baseline never called the enabling sequence. */
 }
 
@@ -100,10 +124,8 @@ void AppScheduler_Process(void)
   AppProtocol_Process(&runtime.protocol, Scheduler_ProcessFrame, &runtime);
   AppLimit_Process(&runtime.limits);
   AppMotion_Process(&runtime.motion, runtime.irq, &runtime.protocol,
-                    &runtime.tmc, &x_tmc5160);
-#if !LIMIT_GPIO_STATIC_TEST && !SERIAL_PROTOCOL_STAGE1_TEST
-  AppSelfTest_Process(&runtime.tmc, &x_tmc5160);
-#endif
+                    motion_axes, SERIAL_MOTION_AXIS_COUNT,
+                    AppLimit_ConsumeInterruptMask());
 }
 
 void AppScheduler_Run(void)

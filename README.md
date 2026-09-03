@@ -1,6 +1,6 @@
 # MUEYE MotorContrl
 
-STM32F103RC 电机控制固件，当前以 X 轴 TMC5160 驱动器为对象，采用
+STM32F103RC 三轴电机控制固件，X/Y/Z 分别使用独立的 TMC5160、DIR、STEP 和限位输入，采用
 Keil µVision + Arm Compiler 6 构建。开发过程遵循“先验证通信，再验证寄存器、
 使能、单步和短时运动，最后再接入控制协议”的最小验证路线。
 
@@ -8,18 +8,18 @@ Keil µVision + Arm Compiler 6 构建。开发过程遵循“先验证通信，�
 
 - `MotorContrl/Src`：系统入口、时钟及保留的中断代码。
 - `MotorContrl/Inc`：公共接口、参数类型与配置宏。
-- `MotorContrl/APPs`：固定轮询、串口、运动、辅助输出、限位、LED、自检与灯板控制。
+- `MotorContrl/APPs`：固定轮询、串口、运动、辅助输出、限位、LED 与灯板控制。
 - `MotorContrl/Drivers/Board`：板级外设驱动；其余 `Drivers` 子目录为未修改的 HAL/CMSIS。
 - `MotorContrl/MDK-ARM`：Keil 工程文件。
 - `doc/schematic_info.md`：硬件引脚和连接关系的唯一参考。
 - `doc/risk_and_development_plan.md`：风险、开发路线和实机验证记录。
 - [重构架构与保留边界](doc/refactor_architecture.md)、[逐项测试方案](doc/refactor_test_plan.md)。
 - `tests/check_refactor.py`：以重构前工作区为基线的结构检查和主机 C 差分测试。
-- `firmware_releases`：已通过对应实机验证的 HEX 文件。
+- `firmware_releases`：按标签归档的 HEX 文件；文件名含 `unverified` 的快照尚未完成实机验收。
 
 ## 版本路线
 
-当前工作区已做分层提取，灯板串口控制和 MCP4728 易失寄存器写入已实现；本次尚未完成实机验收，不属于下面的已归档发布版本。验证结果和上板清单见 [重构测试方案](doc/refactor_test_plan.md)。
+当前工作区已将 X 轴运动状态机通过轴配置结构体扩展到 Y/Z，灯板串口控制和 MCP4728 易失寄存器写入也已实现。三轴代码已通过主机模拟与 Keil 构建，但 Y/Z 运动尚未完成实机验收；本轮改动归档为 `dev-20260903-three-axis-protocol-unverified` 开发快照，不作为实机通过版本。验证结果和上板清单见 [重构测试方案](doc/refactor_test_plan.md)。
 
 下表中的“本版功能”是该标签对应代码的实际范围；每个标签都保留了完整源代码，
 可以用 Git 切换回当时的状态。
@@ -46,10 +46,13 @@ Keil µVision + Arm Compiler 6 构建。开发过程遵循“先验证通信，�
 | `dev-20260831-limit-pnp-active-high-unverified` | 根据 EE-SX951P-R PNP OUT1 接线，将限位采样统一改为 MCU 高电平有效；保留 10 ms 轮询，暂不启用 EXTI 和新的限位停机测试。 | 代码和接线记录已更新；等待用户完成正常、遮光、断线、掉电及电阻温升实测；未形成已验证 HEX。 |
 | `dev-20260901-limit-exti-motion-stop-unverified` | 将九路限位改为双边沿 EXTI；X 轴三路遮光上升沿在 ISR 中立即停止 X 轴 STEP，但保持 XEN 使能，Y/Z 限位只记录各自状态，并由主循环完成限位停止状态和串口错误应答。 | PC6 输入极性已完成实测；EXTI、X 轴限位停机及其余八路仍待上板验证。本快照不作为正式发布版本。 |
 | `dev-20260901-limit-exti-motion-stop-pass` | 在上述限位保护基础上补全当前通信协议，并记录 X 轴连续运动中限位中止实测结果。 | 用户实测连续运行正常；遮挡 X 轴限位可中止运动并回传 `0x02FF/0x0B`。普通停止保持使能和 MCP4728 尚未分别完成实机验收；仍为开发快照。 |
+| `dev-20260903-three-axis-protocol-unverified` | 将运动、停止、状态查询和限位处理按轴配置结构体复用到 X/Y/Z；删除旧 X 轴自动自检及专用包装；补全三轴通信协议文档。 | Keil 构建 0 错误、0 警告；三轴主机模拟通过；Y/Z 电机与限位、Z 轴 `IHOLD=0`/`IRUN=3`、MCP4728 I2C 尚未完成完整实机验收。本快照标记为未测试开发归档。 |
 
 ## 当前硬件与安全状态
 
 - X 轴 TMC5160：SPI1，CS 为 PC2，ENN 为 PC3，DIR 为 PA0，STEP 为 PA1。
+- Y 轴 TMC5160：SPI1，CS 为 PC4，ENN 为 PC5，DIR 为 PB0，STEP 为 PB1（TIM3_CH4）。
+- Z 轴 TMC5160：SPI1，CS 为 PB7，ENN 为 PB4，DIR 为 PB5，STEP 为 PB6（TIM4_CH1）；运动前需先释放 PB13/CN5 抱闸。
 - X 电机接在 CN17；同一绕组接在同一相输入，绕组极性可通过 DIR/后续逻辑调整。
 - 当前 v0.15 X 轴串口运动使用约 1.15 A RMS/相运行电流、约 0.29 A RMS/相保持电流，仅适合空载、短时测试；不要直接用于长期连续运行或大负载。
 - PB12/PB13 的串口开关控制已归档；用户确认串口控制和回传正常，并确认更换器件后 PB13/CN5 的 24 V 抱闸输出正常。
@@ -71,14 +74,12 @@ git switch --detach v0.8-sixteen-step-pass
 git switch master
 ```
 
-当前主机通信使用 CN4/USART3；CN6/USART2 保留作后续扩展。`0x0200` 请求帧的速度单位为
-STEP/s、距离单位为 STEP 脉冲数，正常完成后回传 `0x0201`，但保持 X 驱动使能；`0x0202` 为主机停止命令，停止后保持
-X 驱动使能并回传 `0x0202`；`0x0203` 查询当前状态。当前未归档工作区另有验证用 `0x02F0` 持续运行命令，运行中
-由 X 轴三路限位 EXTI 监视，PC6/PB15/PB14 任一路遮光触发后立即停止 X 轴并回传错误码 `0x0B`（`0x02FF`）。Y/Z 限位暂只记录状态，待对应轴运动协议实现后接入停机。该保护
-路径尚未完成新开关实机验证，不能视为已发布功能。
+当前主机通信使用 CN4/USART3；CN6/USART2 保留作后续扩展。运动帧轴号 `01/02/03` 分别选择 X/Y/Z；每条命令只运行一轴，不做多轴同步插补，也不允许另一轴在当前运动完成前启动。`0x0200` 请求帧的速度单位为 STEP/s、距离单位为 STEP 脉冲数，正常完成后回传 `0x0201` 并保持该轴驱动使能；`0x0202` 只停止帧中指定的当前活动轴，`0x0203` 查询当前状态。验证用 `0x02F0` 为单轴持续运行命令。
+
+每轴只响应自己的三路限位：X 为 PC6/PB15/PB14，Y 为 PC9/PC8/PC7，Z 为 PA12/PA11/PA10。当前三轴限位保护均接入公共启动拦截和运动中停机链路，Z 轴通过 `Z_LIMIT_PROTECTION_ENABLED=1` 开启；Z 轴限位和降低电流参数仍待上板验证。Z 轴当前使用 `IHOLD=0`、`IRUN=3` 测试参数，尚未完成硬件验收。
 
 开发快照 `dev-20260827-serial-aux-output-unverified` 还支持 `0x0300`（PB12/CN1 5 V）和 `0x0400`（PB13/CN5 24 V 抱闸）控制：
 数据前两字节为 `01 00` 开启或 `02 00` 关闭，其余 6 字节为 0；合法帧回传 `AA AA` 帧头、
 原命令与数据、`55 55` 帧尾。PB13 输出高电平会释放抱闸；串口控制、回传以及更换器件后的 24 V 抱闸输出已由用户确认。
 
-本次归档后的下一项工作是光电限位开关逐路实机测试及 X 轴限位停机测试；在该测试完成前，不把限位保护标记为已验收。当前 `0x0500` 已支持按协议控制 CN10 四路输出，但 MCP4728 ACK、电压和 SCL/SDA 电平处理仍待实机验证。
+下一项工作是按 Y、Z 顺序进行低速短行程空载测试，并逐路验证对应限位；Z 轴每次测试前先释放抱闸，结束后再抱闸。当前 `0x0500` 已支持按协议控制 CN10 四路输出，但 MCP4728 ACK、电压和 SCL/SDA 电平仍需等 I2C 上拉改为 5 V 后验证。

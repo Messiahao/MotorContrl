@@ -515,11 +515,6 @@
               <FilePath>..\Inc\app_scheduler.h</FilePath>
             </File>
             <File>
-              <FileName>app_self_test.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\Inc\app_self_test.h</FilePath>
-            </File>
-            <File>
               <FileName>app_types.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\Inc\app_types.h</FilePath>
@@ -703,11 +698,6 @@
               <FileName>app_scheduler.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\APPs\app_scheduler.c</FilePath>
-            </File>
-            <File>
-              <FileName>app_self_test.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\APPs\app_self_test.c</FilePath>
             </File>
           </Files>
         </Group>

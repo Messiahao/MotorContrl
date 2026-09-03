@@ -241,4 +241,14 @@ void TIM2_IRQHandler(void)
   HAL_TIM_IRQHandler(&htim2);
 }
 
+void TIM3_IRQHandler(void)
+{
+  HAL_TIM_IRQHandler(&htim3);
+}
+
+void TIM4_IRQHandler(void)
+{
+  HAL_TIM_IRQHandler(&htim4);
+}
+
 /* USER CODE END 1 */

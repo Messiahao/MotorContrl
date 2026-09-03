@@ -1,5 +1,4 @@
 #include "app_motion.h"
-#include "app_limit.h"
 #include "gpio.h"
 #include "tim.h"
 #include "usart.h"
@@ -63,117 +62,142 @@ static uint8_t Serial_Motion_SendStatusResponse(AppMotionState *motion, const Ap
                             SERIAL_TEST_FRAME_SIZE, SERIAL_TX_TIMEOUT_MS) == HAL_OK);
 }
 
-static uint8_t Serial_Motion_PrepareAndStart(AppMotionState *motion, const AppMotionIrq *irq,
-                                              AppTmcState *tmc, const TMC5160_HandleTypeDef *dev)
+static const AppMotionAxisConfig *Serial_Motion_FindAxis(
+    const AppMotionAxisConfig *axes, uint8_t axis_count, uint8_t protocol_axis)
 {
+  uint8_t i;
+
+  for (i = 0U; i < axis_count; i++)
+  {
+    if (axes[i].protocol_axis == protocol_axis)
+    {
+      return &axes[i];
+    }
+  }
+  return 0;
+}
+
+static AppMotionAxisState *Serial_Motion_GetAxisState(
+    AppMotionState *motion, const AppMotionAxisConfig *axis)
+{
+  return &motion->axis_state[axis->protocol_axis - SERIAL_MOTION_AXIS_X];
+}
+
+static uint8_t Serial_Motion_PrepareAndStart(
+    AppMotionState *motion, const AppMotionIrq *irq,
+    const AppMotionAxisConfig *axis)
+{
+  AppMotionAxisState *axis_state;
+  const TMC5160_HandleTypeDef *dev;
   uint32_t expected_chopconf;
   uint16_t limit_mask;
 
+  axis_state = Serial_Motion_GetAxisState(motion, axis);
+  dev = &axis->tmc;
 
   limit_mask = BspGpio_ReadLimitActiveMask();
-  if ((limit_mask & X_LIMIT_ACTIVE_MASK) != 0U)
+  if ((limit_mask & axis->limit_mask) != 0U)
   {
-    motion->serial_motion_last_limit_mask = limit_mask & X_LIMIT_ACTIVE_MASK;
+    motion->serial_motion_last_limit_mask = limit_mask & axis->limit_mask;
     return SERIAL_MOTION_ERROR_LIMIT;
   }
 
   BspTmc5160_WriteEnable(dev, 0U);
-  tmc->x_tmc5160_ioin = BspTmc5160_ReadRegister(dev, TMC5160_IOIN);
-  tmc->x_tmc5160_spi_ok = ((tmc->x_tmc5160_ioin >> TMC5160_VERSION_SHIFT) == TMC5160_VERSION_VALUE);
-  tmc->x_tmc5160_spi_test_done = 1U;
-  if (tmc->x_tmc5160_spi_ok == 0U)
+  axis_state->enable_active = 0U;
+  axis_state->ioin = BspTmc5160_ReadRegister(dev, TMC5160_IOIN);
+  axis_state->spi_ok =
+      ((axis_state->ioin >> TMC5160_VERSION_SHIFT) == TMC5160_VERSION_VALUE);
+  axis_state->spi_test_done = 1U;
+  if (axis_state->spi_ok == 0U)
   {
     return SERIAL_MOTION_ERROR_TMC;
   }
 
-  BspTmc5160_WriteRegister(dev, TMC5160_GCONF,
-                        TMC5160_GCONF_INIT);
-  tmc->x_tmc5160_gconf = BspTmc5160_ReadRegister(dev, TMC5160_GCONF);
-  tmc->x_tmc5160_gconf_ok = (tmc->x_tmc5160_gconf == TMC5160_GCONF_INIT);
-  tmc->x_tmc5160_gconf_test_done = 1U;
-  if (tmc->x_tmc5160_gconf_ok == 0U)
+  BspTmc5160_WriteRegister(dev, TMC5160_GCONF, TMC5160_GCONF_INIT);
+  axis_state->gconf = BspTmc5160_ReadRegister(dev, TMC5160_GCONF);
+  axis_state->gconf_ok = (axis_state->gconf == TMC5160_GCONF_INIT);
+  axis_state->gconf_test_done = 1U;
+  if (axis_state->gconf_ok == 0U)
   {
     return SERIAL_MOTION_ERROR_TMC;
   }
 
-  tmc->x_tmc5160_gstat = BspTmc5160_ReadRegister(dev, TMC5160_GSTAT);
-  tmc->x_tmc5160_gstat_test_done = 1U;
-  BspTmc5160_WriteRegister(dev, TMC5160_GSTAT,
-                        TMC5160_GSTAT_INIT);
+  axis_state->gstat = BspTmc5160_ReadRegister(dev, TMC5160_GSTAT);
+  axis_state->gstat_test_done = 1U;
+  BspTmc5160_WriteRegister(dev, TMC5160_GSTAT, TMC5160_GSTAT_INIT);
   /* 阻塞延时，建议后续改为状态机定时器替代 */
   HAL_Delay(SERIAL_MOTION_GSTAT_CLEAR_DELAY_MS);
-  tmc->x_tmc5160_gstat_after_clear =
+  axis_state->gstat_after_clear =
       BspTmc5160_ReadRegister(dev, TMC5160_GSTAT);
-  tmc->x_tmc5160_gstat_uv_cp_clear_ok =
-      ((tmc->x_tmc5160_gstat_after_clear & TMC5160_GSTAT_UV_CP) == 0U);
-  tmc->x_tmc5160_gstat_clear_test_done = 1U;
-  if (tmc->x_tmc5160_gstat_uv_cp_clear_ok == 0U)
+  axis_state->gstat_uv_cp_clear_ok =
+      ((axis_state->gstat_after_clear & TMC5160_GSTAT_UV_CP) == 0U);
+  axis_state->gstat_clear_test_done = 1U;
+  if (axis_state->gstat_uv_cp_clear_ok == 0U)
   {
     return SERIAL_MOTION_ERROR_TMC;
   }
 
-  tmc->x_tmc5160_chopconf =
+  axis_state->chopconf =
       BspTmc5160_ReadRegister(dev, TMC5160_CHOPCONF);
-  tmc->x_tmc5160_static_read_test_done = 1U;
+  axis_state->static_read_test_done = 1U;
   BspTmc5160_WriteRegister(dev, TMC5160_IHOLD_IRUN,
-                        TMC5160_IHOLD(X_MOTION_IHOLD) |
-                        TMC5160_IRUN(X_MOTION_IRUN));
-  expected_chopconf = (tmc->x_tmc5160_chopconf & ~TMC5160_TOFF_MASK) |
-                      TMC5160_TOFF(X_MOTION_TOFF);
-  BspTmc5160_WriteRegister(dev, TMC5160_CHOPCONF,
-                        expected_chopconf);
-  tmc->x_tmc5160_chopconf_configured =
+                           TMC5160_IHOLD(axis->ihold) |
+                           TMC5160_IRUN(axis->irun));
+  expected_chopconf = (axis_state->chopconf & ~TMC5160_TOFF_MASK) |
+                      TMC5160_TOFF(axis->toff);
+  BspTmc5160_WriteRegister(dev, TMC5160_CHOPCONF, expected_chopconf);
+  axis_state->chopconf_configured =
       BspTmc5160_ReadRegister(dev, TMC5160_CHOPCONF);
-  tmc->x_tmc5160_low_current_config_ok =
-      (tmc->x_tmc5160_chopconf_configured == expected_chopconf);
-  tmc->x_tmc5160_low_current_config_test_done = 1U;
-  if (tmc->x_tmc5160_low_current_config_ok == 0U)
+  axis_state->low_current_config_ok =
+      (axis_state->chopconf_configured == expected_chopconf);
+  axis_state->low_current_config_test_done = 1U;
+  if (axis_state->low_current_config_ok == 0U)
   {
     return SERIAL_MOTION_ERROR_TMC;
   }
 
   limit_mask = BspGpio_ReadLimitActiveMask();
-  if ((limit_mask & X_LIMIT_ACTIVE_MASK) != 0U)
+  if ((limit_mask & axis->limit_mask) != 0U)
   {
-    motion->serial_motion_last_limit_mask = limit_mask & X_LIMIT_ACTIVE_MASK;
+    motion->serial_motion_last_limit_mask = limit_mask & axis->limit_mask;
     return SERIAL_MOTION_ERROR_LIMIT;
   }
   BspTmc5160_WriteEnable(dev, 1U);
-  tmc->x_tmc5160_enable_test_active = 1U;
+  axis_state->enable_active = 1U;
   /* 阻塞延时，建议后续改为状态机定时器替代 */
   HAL_Delay(SERIAL_MOTION_ENABLE_DELAY_MS);
-  tmc->x_tmc5160_gstat_enabled =
+  axis_state->gstat_enabled =
       BspTmc5160_ReadRegister(dev, TMC5160_GSTAT);
-  tmc->x_tmc5160_drv_status_enabled =
+  axis_state->drv_status_enabled =
       BspTmc5160_ReadRegister(dev, TMC5160_DRV_STATUS);
-  tmc->x_tmc5160_enable_test_ok =
-      ((tmc->x_tmc5160_gstat_enabled &
+  axis_state->enable_ok =
+      ((axis_state->gstat_enabled &
         (TMC5160_GSTAT_DRV_ERR | TMC5160_GSTAT_UV_CP)) == 0U);
-  tmc->x_tmc5160_enable_test_done = 1U;
-  if (tmc->x_tmc5160_enable_test_ok == 0U)
+  axis_state->enable_test_done = 1U;
+  if (axis_state->enable_ok == 0U)
   {
     BspTmc5160_WriteEnable(dev, 0U);
-    tmc->x_tmc5160_enable_test_active = 0U;
+    axis_state->enable_active = 0U;
     return SERIAL_MOTION_ERROR_TMC;
   }
 
   limit_mask = BspGpio_ReadLimitActiveMask();
-  if ((limit_mask & X_LIMIT_ACTIVE_MASK) != 0U)
+  if ((limit_mask & axis->limit_mask) != 0U)
   {
-    motion->serial_motion_last_limit_mask = limit_mask & X_LIMIT_ACTIVE_MASK;
+    motion->serial_motion_last_limit_mask = limit_mask & axis->limit_mask;
     BspTmc5160_WriteEnable(dev, 0U);
-    tmc->x_tmc5160_enable_test_active = 0U;
+    axis_state->enable_active = 0U;
     return SERIAL_MOTION_ERROR_LIMIT;
   }
 
-  BspGpio_Write(X_DIR_GPIO_Port, X_DIR_Pin,
-                    (motion->serial_motion_target_direction != 0U) ?
-                    GPIO_PIN_SET : GPIO_PIN_RESET);
-  BspGpio_Write(X_STEP_GPIO_Port, X_STEP_Pin, GPIO_PIN_RESET);
+  BspGpio_Write(axis->direction_port, axis->direction_pin,
+                (motion->serial_motion_target_direction != 0U) ?
+                GPIO_PIN_SET : GPIO_PIN_RESET);
+  BspGpio_Write(axis->step_port, axis->step_pin, GPIO_PIN_RESET);
   /* 阻塞延时，建议后续改为状态机定时器替代 */
   HAL_Delay(SERIAL_MOTION_DIRECTION_DELAY_MS);
-  BspGpio_WriteXStepMode(GPIO_MODE_AF_PP);
-  BspGpio_Write(X_STEP_GPIO_Port, X_STEP_Pin, GPIO_PIN_RESET);
+  BspGpio_WriteStepMode(axis->step_port, axis->step_pin, GPIO_MODE_AF_PP);
+  BspGpio_Write(axis->step_port, axis->step_pin, GPIO_PIN_RESET);
   motion->serial_motion_mscnt_before =
       BspTmc5160_ReadRegister(dev, TMC5160_MSCNT);
   motion->serial_motion_mscnt_ok = 0U;
@@ -187,21 +211,27 @@ static uint8_t Serial_Motion_PrepareAndStart(AppMotionState *motion, const AppMo
   (*irq->serial_motion_last_period_ticks) = 0U;
   (*irq->serial_motion_profile_error) = SERIAL_MOTION_ERROR_NONE;
   (*irq->serial_motion_pulses_done) = 0U;
+  (*irq->serial_motion_axis) = axis->protocol_axis;
   if (irq->write_initial_speed() == 0U)
   {
     BspTmc5160_WriteEnable(dev, 0U);
-    tmc->x_tmc5160_enable_test_active = 0U;
+    axis_state->enable_active = 0U;
     return SERIAL_MOTION_ERROR_TIMER;
   }
-  BspTim_WriteXSetupInterrupt();
+  if (BspTim_WriteAxisSetupInterrupt(axis->protocol_axis) == 0U)
+  {
+    BspTmc5160_WriteEnable(dev, 0U);
+    axis_state->enable_active = 0U;
+    return SERIAL_MOTION_ERROR_TIMER;
+  }
   (*irq->serial_motion_active) = 1U;
-  if (BspTim_WriteXStart() != HAL_OK)
+  if (BspTim_WriteAxisStart(axis->protocol_axis) != HAL_OK)
   {
     (*irq->serial_motion_active) = 0U;
-    BspTim_WriteXStop();
-    BspTim_WriteXDisableUpdate();
+    (void)BspTim_WriteAxisStop(axis->protocol_axis);
+    BspTim_WriteAxisDisableUpdate(axis->protocol_axis);
     BspTmc5160_WriteEnable(dev, 0U);
-    tmc->x_tmc5160_enable_test_active = 0U;
+    axis_state->enable_active = 0U;
     return SERIAL_MOTION_ERROR_TIMER;
   }
   motion->serial_motion_state = SERIAL_MOTION_STATE_ACTIVE;
@@ -209,18 +239,23 @@ static uint8_t Serial_Motion_PrepareAndStart(AppMotionState *motion, const AppMo
   return SERIAL_MOTION_ERROR_NONE;
 }
 
-void AppMotion_Init(void)
+void AppMotion_Init(const AppMotionAxisConfig *axes, uint8_t axis_count)
 {
-  BspGpio_Write(GPIOC, X_EN_Pin | Y_EN_Pin, GPIO_PIN_SET);
-  BspGpio_Write(GPIOB, Z_EN_Pin, GPIO_PIN_SET);
-  BspGpio_Write(X_DIR_GPIO_Port, X_DIR_Pin, GPIO_PIN_RESET);
-  BspGpio_Write(Y_DIR_GPIO_Port, Y_DIR_Pin, GPIO_PIN_RESET);
-  BspGpio_Write(Z_DIR_GPIO_Port, Z_DIR_Pin, GPIO_PIN_RESET);
+  uint8_t i;
+
+  for (i = 0U; i < axis_count; i++)
+  {
+    BspTmc5160_WriteEnable(&axes[i].tmc, 0U);
+    BspGpio_Write(axes[i].direction_port, axes[i].direction_pin,
+                  GPIO_PIN_RESET);
+  }
 }
 
-void AppMotion_ProcessStart(AppMotionState *motion, const AppMotionIrq *irq, AppProtocolState *protocol,
-                              const uint8_t *frame)
+void AppMotion_ProcessStart(AppMotionState *motion, const AppMotionIrq *irq,
+                            AppProtocolState *protocol, const uint8_t *frame,
+                            const AppMotionAxisConfig *axes, uint8_t axis_count)
 {
+  const AppMotionAxisConfig *axis;
   uint8_t i;
   uint8_t motion_frame_ok;
   uint8_t motion_continuous;
@@ -229,7 +264,7 @@ void AppMotion_ProcessStart(AppMotionState *motion, const AppMotionIrq *irq, App
   uint32_t motion_distance_steps;
   uint8_t motion_response[SERIAL_TEST_FRAME_SIZE];
 
-  protocol->serial_test_last_frame_ok = 0U;
+  (void)protocol;
   motion->serial_motion_command_count++;
   motion->serial_motion_last_axis = frame[SERIAL_FRAME_DATA0_INDEX];
   motion->serial_motion_last_direction = frame[SERIAL_FRAME_DATA1_INDEX];
@@ -250,6 +285,8 @@ void AppMotion_ProcessStart(AppMotionState *motion, const AppMotionIrq *irq, App
   }
   motion->serial_motion_last_speed_hz = motion_speed_hz;
   motion->serial_motion_last_distance_steps = motion_distance_steps;
+  axis = Serial_Motion_FindAxis(axes, axis_count,
+                                motion->serial_motion_last_axis);
 
   motion_frame_ok =
       (frame[SERIAL_FRAME_TAIL0_INDEX] == SERIAL_REQUEST_TAIL) &&
@@ -259,7 +296,7 @@ void AppMotion_ProcessStart(AppMotionState *motion, const AppMotionIrq *irq, App
   {
     motion_error_code = SERIAL_MOTION_ERROR_FRAME;
   }
-  else if (motion->serial_motion_last_axis != SERIAL_MOTION_AXIS_X)
+  else if (axis == 0)
   {
     motion_error_code = SERIAL_MOTION_ERROR_AXIS;
   }
@@ -329,21 +366,24 @@ void AppMotion_ProcessStart(AppMotionState *motion, const AppMotionIrq *irq, App
     {
       motion_response[i] = 0U;
     }
-    protocol->serial_test_frame_error_count++;
   }
   motion_response[SERIAL_FRAME_TAIL0_INDEX] = SERIAL_RESPONSE_TAIL;
   motion_response[SERIAL_FRAME_TAIL1_INDEX] = SERIAL_RESPONSE_TAIL;
   motion->serial_motion_last_response_ok =
       (BspUsart_Write(motion_response,
                          SERIAL_TEST_FRAME_SIZE, SERIAL_TX_TIMEOUT_MS) == HAL_OK);
-  protocol->serial_test_last_response_ok = motion->serial_motion_last_response_ok;
 }
 
-void AppMotion_ProcessStop(AppMotionState *motion, const AppMotionIrq *irq, AppProtocolState *protocol,
-                              const uint8_t *frame)
+void AppMotion_ProcessStop(AppMotionState *motion, const AppMotionIrq *irq,
+                           AppProtocolState *protocol, const uint8_t *frame,
+                           const AppMotionAxisConfig *axes, uint8_t axis_count)
 {
-  protocol->serial_test_last_frame_ok = 0U;
+  const AppMotionAxisConfig *axis;
+
+  (void)protocol;
   motion->serial_motion_stop_command_count++;
+  axis = Serial_Motion_FindAxis(axes, axis_count,
+                                frame[SERIAL_FRAME_DATA0_INDEX]);
   if ((frame[SERIAL_FRAME_TAIL0_INDEX] != SERIAL_REQUEST_TAIL) ||
       (frame[SERIAL_FRAME_TAIL1_INDEX] != SERIAL_REQUEST_TAIL))
   {
@@ -351,7 +391,9 @@ void AppMotion_ProcessStop(AppMotionState *motion, const AppMotionIrq *irq, AppP
     motion->serial_motion_last_response_ok =
         Serial_Motion_SendResponse(motion, irq, SERIAL_STATUS_ERROR, SERIAL_MOTION_ERROR_FRAME);
   }
-  else if (frame[SERIAL_FRAME_DATA0_INDEX] != SERIAL_MOTION_AXIS_X)
+  else if ((axis == 0) ||
+           ((motion->serial_motion_busy != 0U) &&
+            (axis->protocol_axis != motion->serial_motion_target_axis)))
   {
     motion->serial_motion_error_code = SERIAL_MOTION_ERROR_AXIS;
     motion->serial_motion_last_response_ok =
@@ -369,13 +411,12 @@ void AppMotion_ProcessStop(AppMotionState *motion, const AppMotionIrq *irq, AppP
     motion->serial_motion_stop_pending = 1U;
     motion->serial_motion_last_response_ok = 0U;
   }
-  protocol->serial_test_last_response_ok = motion->serial_motion_last_response_ok;
 }
 
 void AppMotion_ProcessStatus(AppMotionState *motion, const AppMotionIrq *irq, AppProtocolState *protocol,
                               const uint8_t *frame)
 {
-  protocol->serial_test_last_frame_ok = 0U;
+  (void)protocol;
   motion->serial_motion_status_query_count++;
   if ((frame[SERIAL_FRAME_TAIL0_INDEX] != SERIAL_REQUEST_TAIL) ||
       (frame[SERIAL_FRAME_TAIL1_INDEX] != SERIAL_REQUEST_TAIL))
@@ -389,19 +430,33 @@ void AppMotion_ProcessStatus(AppMotionState *motion, const AppMotionIrq *irq, Ap
     motion->serial_motion_last_status_response_ok =
         Serial_Motion_SendStatusResponse(motion, irq);
   }
-  protocol->serial_test_last_response_ok = motion->serial_motion_last_status_response_ok;
 }
 
-void AppMotion_Process(AppMotionState *motion, const AppMotionIrq *irq, AppProtocolState *protocol,
-                       AppTmcState *tmc, const TMC5160_HandleTypeDef *dev)
+void AppMotion_Process(AppMotionState *motion, const AppMotionIrq *irq,
+                       AppProtocolState *protocol,
+                       const AppMotionAxisConfig *axes, uint8_t axis_count,
+                       uint16_t limit_event_mask)
 {
+  AppMotionAxisState *axis_state;
+  const AppMotionAxisConfig *axis;
+  const TMC5160_HandleTypeDef *dev;
   uint8_t start_error_code;
   uint8_t stop_status;
   uint8_t stop_error_code;
   uint8_t stop_state;
-  uint16_t limit_event_mask;
-
-  limit_event_mask = AppLimit_ConsumeInterruptMask() & X_LIMIT_ACTIVE_MASK;
+  (void)protocol;
+  axis = Serial_Motion_FindAxis(axes, axis_count,
+                                motion->serial_motion_target_axis);
+  axis_state = (axis != 0) ? Serial_Motion_GetAxisState(motion, axis) : 0;
+  dev = (axis != 0) ? &axis->tmc : 0;
+  if (axis != 0)
+  {
+    limit_event_mask &= axis->limit_mask;
+  }
+  else
+  {
+    limit_event_mask = 0U;
+  }
   if (limit_event_mask != 0U)
   {
     motion->serial_motion_last_limit_mask = limit_event_mask;
@@ -432,13 +487,14 @@ void AppMotion_Process(AppMotionState *motion, const AppMotionIrq *irq, AppProto
     motion->serial_motion_command_pending = 0U;
     if ((*irq->serial_motion_active) != 0U)
     {
-      BspTim_WriteXStop();
-      BspTim_WriteXDisableUpdate();
+      (void)BspTim_WriteAxisStop(axis->protocol_axis);
+      BspTim_WriteAxisDisableUpdate(axis->protocol_axis);
       (*irq->serial_motion_active) = 0U;
     }
     (*irq->serial_motion_done) = 0U;
-    BspGpio_WriteXStepMode(GPIO_MODE_OUTPUT_PP);
-    BspGpio_Write(X_STEP_GPIO_Port, X_STEP_Pin, GPIO_PIN_RESET);
+    BspGpio_WriteStepMode(axis->step_port, axis->step_pin,
+                          GPIO_MODE_OUTPUT_PP);
+    BspGpio_Write(axis->step_port, axis->step_pin, GPIO_PIN_RESET);
     if (motion->serial_motion_start_ok != 0U)
     {
       motion->serial_motion_mscnt_after =
@@ -447,7 +503,7 @@ void AppMotion_Process(AppMotionState *motion, const AppMotionIrq *irq, AppProto
           (uint16_t)((motion->serial_motion_mscnt_after -
                       motion->serial_motion_mscnt_before) & TMC5160_MSCNT_MASK);
     }
-    tmc->x_tmc5160_enable_test_active = 0U;
+    axis_state->enable_active = 0U;
     motion->serial_motion_start_ok = 0U;
     (*irq->serial_motion_continuous) = 0U;
     motion->serial_motion_busy = 0U;
@@ -462,7 +518,6 @@ void AppMotion_Process(AppMotionState *motion, const AppMotionIrq *irq, AppProto
       motion->serial_motion_last_limit_response_ok =
           motion->serial_motion_last_completion_response_ok;
     }
-    protocol->serial_test_last_response_ok = motion->serial_motion_last_completion_response_ok;
   }
 
   if ((motion->serial_motion_command_pending != 0U) &&
@@ -470,7 +525,7 @@ void AppMotion_Process(AppMotionState *motion, const AppMotionIrq *irq, AppProto
   {
     motion->serial_motion_command_pending = 0U;
     motion->serial_motion_start_ok = 0U;
-    start_error_code = Serial_Motion_PrepareAndStart(motion, irq, tmc, dev);
+    start_error_code = Serial_Motion_PrepareAndStart(motion, irq, axis);
     if (start_error_code != SERIAL_MOTION_ERROR_NONE)
     {
       motion->serial_motion_error_code = start_error_code;
@@ -480,16 +535,15 @@ void AppMotion_Process(AppMotionState *motion, const AppMotionIrq *irq, AppProto
       motion->serial_motion_last_completion_error_code = start_error_code;
       motion->serial_motion_last_completion_response_ok =
           Serial_Motion_SendResponse(motion, irq, SERIAL_STATUS_ERROR, start_error_code);
-      protocol->serial_test_last_response_ok =
-          motion->serial_motion_last_completion_response_ok;
     }
   }
 
   if ((*irq->serial_motion_done) != 0U)
   {
     (*irq->serial_motion_done) = 0U;
-    BspGpio_WriteXStepMode(GPIO_MODE_OUTPUT_PP);
-    BspGpio_Write(X_STEP_GPIO_Port, X_STEP_Pin, GPIO_PIN_RESET);
+    BspGpio_WriteStepMode(axis->step_port, axis->step_pin,
+                          GPIO_MODE_OUTPUT_PP);
+    BspGpio_Write(axis->step_port, axis->step_pin, GPIO_PIN_RESET);
     motion->serial_motion_mscnt_after =
         BspTmc5160_ReadRegister(dev, TMC5160_MSCNT);
     motion->serial_motion_mscnt_delta =
@@ -501,7 +555,7 @@ void AppMotion_Process(AppMotionState *motion, const AppMotionIrq *irq, AppProto
          (motion->serial_motion_mscnt_delta ==
           ((TMC5160_MSCNT_MODULUS - ((*irq->serial_motion_target_steps) & TMC5160_MSCNT_MASK)) &
            TMC5160_MSCNT_MASK)));
-    tmc->x_tmc5160_enable_test_active = 0U;
+    axis_state->enable_active = 0U;
     motion->serial_motion_start_ok = 0U;
     (*irq->serial_motion_continuous) = 0U;
     motion->serial_motion_limit_pending = 0U;
@@ -524,6 +578,5 @@ void AppMotion_Process(AppMotionState *motion, const AppMotionIrq *irq, AppProto
       motion->serial_motion_last_completion_response_ok =
           Serial_Motion_SendResponse(motion, irq, SERIAL_STATUS_DONE, SERIAL_MOTION_ERROR_NONE);
     }
-    protocol->serial_test_last_response_ok = motion->serial_motion_last_completion_response_ok;
   }
 }

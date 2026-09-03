@@ -31,9 +31,8 @@ void AppLight_Process(AppProtocolState *protocol, const uint8_t *frame)
   uint8_t data_ok;
   uint8_t action_ok;
   uint8_t channel_ok;
-  uint16_t code;
 
-  protocol->serial_test_last_frame_ok = 0U;
+  (void)protocol;
   action = frame[SERIAL_FRAME_DATA0_INDEX];
   protocol_channel = frame[SERIAL_FRAME_DATA2_INDEX];
   frame_ok = (frame[SERIAL_FRAME_TAIL0_INDEX] == SERIAL_REQUEST_TAIL) &&
@@ -50,21 +49,14 @@ void AppLight_Process(AppProtocolState *protocol, const uint8_t *frame)
                (protocol_channel <= APP_LIGHT_CHANNEL_4);
 
   if ((frame_ok == 0U) || (data_ok == 0U) ||
-      (action_ok == 0U) || (channel_ok == 0U))
+      (action_ok == 0U) || (channel_ok == 0U) ||
+      (BspMcp4728_Write(
+          (uint8_t)(protocol_channel - 1U),
+          (action == SERIAL_AUX_ACTION_ON) ?
+          BSP_MCP4728_CODE_FULL_SCALE : BSP_MCP4728_CODE_OFF) == 0U))
   {
-    protocol->serial_test_frame_error_count++;
-    protocol->serial_test_last_response_ok = 0U;
     return;
   }
 
-  code = (action == SERIAL_AUX_ACTION_ON) ?
-         BSP_MCP4728_CODE_FULL_SCALE : BSP_MCP4728_CODE_OFF;
-  if (BspMcp4728_Write((uint8_t)(protocol_channel - 1U), code) == 0U)
-  {
-    protocol->serial_test_frame_error_count++;
-    protocol->serial_test_last_response_ok = 0U;
-    return;
-  }
-
-  protocol->serial_test_last_response_ok = Serial_Light_SendResponse(frame);
+  (void)Serial_Light_SendResponse(frame);
 }

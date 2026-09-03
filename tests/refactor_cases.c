@@ -31,6 +31,10 @@ int main(int argc, char **argv)
     static const unsigned speeds[]={1000,1001,3000,10000};
     static const unsigned distances[]={1,2,3,100,5000,12000};
     registers_tmc[0x04]=0x30000000; registers_tmc[0x6c]=0x10400050;
+#ifdef SERIAL_MOTION_AXIS_Y
+    registers_tmc_y[0x04]=registers_tmc_z[0x04]=0x30000000;
+    registers_tmc_y[0x6c]=registers_tmc_z[0x6c]=0x10400050;
+#endif
     TestInit(); Snapshot("init");
     if(n==0) {
         Poll("idle"); tick=9; Poll("9ms"); tick=10; Poll("10ms");
@@ -45,13 +49,13 @@ int main(int argc, char **argv)
         Command(1,0,0,0,0,1); Poll("echo-invalid");
     } else if(n==2) {
         for(i=0;i<8;i++) {
-            Command(2,0,i==0?2:1,i==1?2:0,i==2?999:i==3?10001:1000,
+            Command(2,0,i==0?4:1,i==1?2:0,i==2?999:i==3?10001:1000,
                     i==4?0:i==5?12001:i==6?5001:10);
             if(i==7) rx_data[rx_count-1]=0;
             Poll("invalid-start");
         }
         Command(2,2,1,0,0,0); Poll("stop-idle");
-        Command(2,2,2,0,0,0); Poll("stop-axis");
+        Command(2,2,4,0,0,0); Poll("stop-axis");
         Command(2,2,1,0,0,0); rx_data[rx_count-1]=0; Poll("stop-tail");
         Command(2,3,99,99,99,99); Poll("status-ignored-data");
         Command(2,3,0,0,0,0); rx_data[rx_count-1]=0; Poll("status-tail");
@@ -133,6 +137,59 @@ int main(int argc, char **argv)
     } else if(n==48) {
         for(i=0;i<7100;i++) { tick=i; TestPoll(); }
         Snapshot("legacy-self-test-7100ms");
+#ifdef SERIAL_MOTION_AXIS_Y
+    } else if(n==49) {
+        static const unsigned axes[]={SERIAL_MOTION_AXIS_X,SERIAL_MOTION_AXIS_Y,SERIAL_MOTION_AXIS_Z};
+        static const unsigned channels[]={TIM_CHANNEL_2,TIM_CHANNEL_4,TIM_CHANNEL_1};
+        static GPIO_TypeDef *const dir_ports[]={X_DIR_GPIO_Port,Y_DIR_GPIO_Port,Z_DIR_GPIO_Port};
+        static const unsigned dir_pins[]={X_DIR_Pin,Y_DIR_Pin,Z_DIR_Pin};
+        static GPIO_TypeDef *const step_ports[]={X_STEP_GPIO_Port,Y_STEP_GPIO_Port,Z_STEP_GPIO_Port};
+        static const unsigned step_pins[]={X_STEP_Pin,Y_STEP_Pin,Z_STEP_Pin};
+        for(i=0;i<3;i++) {
+            Command(2,0,axes[i],1,1000,2); Poll("axis-start");
+            assert(runtime.motion.serial_motion_busy==1 && serial_motion_active==1);
+            assert(serial_motion_axis==axes[i] && pwm_axis==i && pwm_channel==channels[i]);
+            assert((output_levels[dir_ports[i]->id]&dir_pins[i])!=0);
+            assert(step_mode_port==step_ports[i]->id && step_mode_pin==step_pins[i] && step_mode==GPIO_MODE_AF_PP);
+            assert(runtime.motion.axis_state[i].spi_ok==1 && runtime.motion.axis_state[i].enable_ok==1);
+            MockPulse(); MockPulse(); Poll("axis-done");
+            assert(runtime.motion.serial_motion_busy==0 && serial_motion_active==0 && pwm_running==0);
+            assert(runtime.motion.serial_motion_state==SERIAL_MOTION_STATE_DONE);
+            assert(runtime.motion.serial_motion_target_axis==axes[i] && runtime.motion.serial_motion_mscnt_ok==1);
+        }
+        for(i=1;i<3;i++) {
+            Command(2,0,axes[i],0,3000,100); Poll("axis-profile-start");
+            for(unsigned pulse=0;pulse<100;pulse++) MockPulse();
+            Poll("axis-profile-done");
+            assert(runtime.motion.serial_motion_state==SERIAL_MOTION_STATE_DONE);
+            assert(serial_motion_peak_speed_hz>1000 && serial_motion_peak_speed_hz<3000);
+            assert(serial_motion_profile_accel_steps>0 && serial_motion_profile_decel_steps>0);
+            assert(runtime.motion.serial_motion_mscnt_ok==1);
+        }
+        Command(2,0xf0,SERIAL_MOTION_AXIS_Y,0,1000,0); Poll("y-continuous");
+        input_levels[0]|=Z_LIM_L_Pin; HAL_GPIO_EXTI_Callback(Z_LIM_L_Pin); Poll("z-limit-ignored-by-y");
+        assert(runtime.motion.serial_motion_busy==1 && serial_motion_active==1);
+        input_levels[0]&=~Z_LIM_L_Pin; HAL_GPIO_EXTI_Callback(Z_LIM_L_Pin);
+        input_levels[2]|=Y_LIM_L_Pin; HAL_GPIO_EXTI_Callback(Y_LIM_L_Pin); Poll("y-limit-stop");
+        assert(runtime.motion.serial_motion_busy==0 && runtime.motion.serial_motion_state==SERIAL_MOTION_STATE_LIMIT_STOPPED);
+        assert(runtime.motion.serial_motion_last_limit_mask==(1U<<BSP_GPIO_Y_LIMIT_L_BIT));
+        input_levels[2]&=~Y_LIM_L_Pin; HAL_GPIO_EXTI_Callback(Y_LIM_L_Pin);
+        Command(2,0xf0,SERIAL_MOTION_AXIS_Z,0,1000,0); Poll("z-continuous");
+        Command(2,2,SERIAL_MOTION_AXIS_Y,0,0,0); Poll("wrong-axis-stop");
+        assert(runtime.motion.serial_motion_busy==1 && serial_motion_active==1);
+        Command(2,2,SERIAL_MOTION_AXIS_Z,0,0,0); Poll("z-stop");
+        assert(runtime.motion.serial_motion_busy==0 && runtime.motion.serial_motion_state==SERIAL_MOTION_STATE_STOPPED);
+        input_levels[0]&=~Z_LIM_L_Pin; HAL_GPIO_EXTI_Callback(Z_LIM_L_Pin);
+        Command(2,0xf0,SERIAL_MOTION_AXIS_Z,0,1000,0); Poll("z-continuous-limit-test");
+        assert(runtime.motion.serial_motion_busy==1 && serial_motion_active==1);
+        input_levels[2]|=X_LIM_L_Pin; HAL_GPIO_EXTI_Callback(X_LIM_L_Pin); Poll("x-limit-ignored-by-z");
+        assert(runtime.motion.serial_motion_busy==1 && serial_motion_active==1);
+        input_levels[2]&=~X_LIM_L_Pin; HAL_GPIO_EXTI_Callback(X_LIM_L_Pin);
+        input_levels[0]|=Z_LIM_L_Pin; HAL_GPIO_EXTI_Callback(Z_LIM_L_Pin); Poll("z-limit-stop");
+        assert(runtime.motion.serial_motion_busy==0 && runtime.motion.serial_motion_state==SERIAL_MOTION_STATE_LIMIT_STOPPED);
+        assert(runtime.motion.serial_motion_last_limit_mask==(1U<<BSP_GPIO_Z_LIMIT_L_BIT));
+        input_levels[0]&=~Z_LIM_L_Pin; HAL_GPIO_EXTI_Callback(Z_LIM_L_Pin);
+#endif
     }
     Snapshot("final"); return 0;
 }

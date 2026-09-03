@@ -20,7 +20,7 @@
 | 系统 | `Src/system_clock.c` | 原系统时钟配置、Error_Handler、断言回调；函数体不变。 |
 | 系统 | `Src/stm32f1xx_it.c` | 原 ISR，文件逐字节不变。 |
 | 系统 | `Src/stm32f1xx_hal_msp.c`、`system_stm32f1xx.c` | 原 HAL 基础初始化及系统启动支持，不变。 |
-| 驱动 | `Drivers/Board/gpio.c` + `Inc/gpio.h` | 原 GPIO 初始化、引脚读写、X STEP 模式切换、即时读取三路 X 限位。 |
+| 驱动 | `Drivers/Board/gpio.c` + `Inc/gpio.h` | GPIO 初始化、XYZ STEP 模式切换、九路限位读取、掩码映射和 EXTI 支持。 |
 | 驱动 | `Drivers/Board/usart.c` + `Inc/usart.h` | 原 USART2/3 初始化；CN4 溢出清除、RXNE 读取、DR 读取与阻塞发送。 |
 | 驱动 | `Drivers/Board/spi.c` + `Inc/spi.h` | 原 SPI1 初始化与读写包装；模式、分频和超时不变。 |
 | 驱动 | `Drivers/Board/tim.c` + `Inc/tim.h` | 原 TIM2/3/4 初始化；前台的 TIM2 PWM 启停及中断配置包装。 |
@@ -34,7 +34,6 @@
 | 业务 | `APPs/app_aux_output.c` | `03 00` 继电器、`04 00` 抱闸控制；校验和回传规则不变。 |
 | 业务 | `APPs/app_limit.c` | 原 10 ms 九路限位采样和调试掩码更新。 |
 | 业务 | `APPs/app_led.c` | 原 500 ms LED 闪烁逻辑。 |
-| 业务 | `APPs/app_self_test.c` | 原条件编译自检顺序；默认仍关闭，不删除旧自检。 |
 | 业务占位 | `APPs/app_light.c` | 空 Init、未实现的 Process；协议 1～4 路映射 A～D 的约定写入头文件。 |
 | 接口/配置 | `Inc/app_*.h`、`Inc/config.h` | 函数声明、参数类型、集中配置；没有业务变量定义或 extern 业务变量。 |
 
@@ -61,7 +60,7 @@ AppScheduler_Run();
 HAL_Init → SystemClock_Config
 → GPIO → USART2 → I2C1 → SPI1 → TIM2 → TIM3 → TIM4 → USART3
 → LED 时间戳/关闭 LED → XYZ EN 禁用 → XYZ DIR 拉低
-→ 限位采样时间戳 → 自检时间戳及 pending → 原 build marker
+→ 限位采样时间戳 → 原 build marker
 → 无硬件副作用的辅助/灯板占位 Init
 ```
 
@@ -76,17 +75,16 @@ AppLed_Process
       → 运动 / 继电器抱闸业务处理并在原位置回传
 → AppLimit_Process：消费九路限位 EXTI 快照并更新调试状态
 → AppMotion_Process：消费限位事件 → 停止 → 待启动 → 完成
-→ 原宏条件允许时，执行 AppSelfTest_Process
 ```
 
-运动任务中的三个处理分支仍是独立 `if`，没有改成 `else if`。启动前仍直接读取限位电平；运行中由九路 EXTI 上升沿在 ISR 中停止 X 轴定时器和驱动，主循环负责状态清理及应答。没有新增 RTOS、消息队列、软件定时器、UART 中断或 DMA。
+运动任务中的三个处理分支仍是独立 `if`，没有改成 `else if`。启动前仍直接读取本轴限位电平；运行中由九路 EXTI 上升沿在 ISR 中停止活动轴定时器，主循环负责状态清理及应答。没有新增 RTOS、消息队列、软件定时器、UART 中断或 DMA。
 
 原 100 ms、200 ms、1 ms 阻塞等待保留在原有操作之间，均已标注“阻塞延时，建议后续改为状态机定时器替代”。原来未调用的 TMC 初始化中的 10 ms 等待也保留并标注。
 
 ## 参数传递与封装
 
 - 公共应用接口统一为 `App<模块>_Init/Process...`，板级接口为 `Bsp<外设>_Init/Read.../Write...`。生成器的 `MX_*` 实现改为驱动文件内的 `static` 函数，HAL 要求的回调保留原名。
-- 调度器私有 `runtime` 持有 Protocol/Motion/Aux/Limit/Tmc 状态，调用各模块时显式传入指针。应用模块之间不直接调用；串口模块的帧回调只返回调度器。
+- 调度器私有 `runtime` 持有 Protocol/Motion/Aux/Limit 状态，调用各模块时显式传入指针。应用模块之间不直接调用；串口模块的帧回调只返回调度器。
 - 原 `volatile` 字段保留 `volatile`；不把 ISR 状态复制成快照，不增加“读取一次”的缓存。原来重复读取的脉冲计数等字段仍逐次读取。
 - `main.c` 中保留 15 个 ISR 使用的原变量；前台通过 `AppMotionIrq` 中的地址访问它们，未新增 `extern` 业务变量。原速度计算仅通过一个前台桥接函数供启动流程调用，ISR 本身不经过该函数指针。
 - `Inc/app_types.h` 只有类型声明，不分配变量存储。UART/SPI/I2C 和 TIM3/4 句柄已隐藏为驱动私有状态。
@@ -101,7 +99,7 @@ ISR 调用链中的原数字常量也保持原文；其他具有业务含义的�
 
 ## 灯板占位边界
 
-当前调用：启动时仅调用空的 `BspMcp4728_Init()` 和 `AppLight_Init()`，轮询不额外增加灯板任务。
+当前调度器不再调用空的 `AppAuxOutput_Init()`、`BspMcp4728_Init()` 和 `AppLight_Init()`；接口保留以兼容外部调用，轮询不额外增加灯板任务。
 
 | 接口 | 当前行为 | 后续填写内容 |
 | --- | --- | --- |

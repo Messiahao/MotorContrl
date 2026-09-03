@@ -53,11 +53,12 @@ void BspGpio_EnableLimitInterrupts(void);
 
 GPIO_PinState BspGpio_Read(GPIO_TypeDef *port, uint16_t pin);
 void BspGpio_Write(GPIO_TypeDef *port, uint16_t pin, GPIO_PinState level);
-void BspGpio_WriteXStepMode(uint32_t mode);
+void BspGpio_WriteStepMode(GPIO_TypeDef *port, uint16_t pin, uint32_t mode);
 GPIO_PinState BspGpio_ReadLimitPin(uint16_t pin);
 uint16_t BspGpio_LimitBitFromPin(uint16_t pin);
 uint16_t BspGpio_ReadLimitActiveMask(void);
-uint16_t BspGpio_ReadXLimitMask(void);
+uint16_t BspGpio_LimitMaskForAxis(uint8_t axis);
+uint16_t BspGpio_ReadAxisLimitMask(uint8_t axis);
 
 /* USER CODE END Prototypes */
 
