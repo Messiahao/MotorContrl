@@ -101,7 +101,7 @@ static void Scheduler_ProcessFrame(void *context, const uint8_t *frame)
 void AppScheduler_Init(const AppMotionIrq *irq)
 {
   runtime.irq = irq;
-  /* Do not group UART initializations: this is the original startup order. */
+  /* Initialize the active host UART before other peripherals. */
   BspGpio_Init();
   BspUsart2_Init();
   BspI2c_Init();
@@ -109,7 +109,6 @@ void AppScheduler_Init(const AppMotionIrq *irq)
   BspTim2_Init();
   BspTim3_Init();
   BspTim4_Init();
-  BspUsart3_Init();
   AppLed_Init();
   AppMotion_Init(motion_axes, SERIAL_MOTION_AXIS_COUNT);
   AppLimit_Init(&runtime.limits);

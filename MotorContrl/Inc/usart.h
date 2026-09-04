@@ -39,7 +39,6 @@ extern "C" {
 /* USER CODE END Private defines */
 
 void BspUsart2_Init(void);
-void BspUsart3_Init(void);
 
 /* USER CODE BEGIN Prototypes */
 

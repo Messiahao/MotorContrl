@@ -14,23 +14,27 @@
 
 **2026-09-03 清理更新：**删除只绑定 X 轴、且默认关闭的旧自动上电自检状态机及其 X 轴兼容包装；正常运动所需的 TMC 检查、限位检查、步进输出和 MSCNT 校验由三轴公共运动路径提供。
 
+**2026-09-04 回归更新：**重构前夹具继续冻结启动、ISR、vendor、工程选项和模块边界；由于当前固件已删除 USART3、改用 EXTI 限位并扩展三轴，运行期不再与旧行为逐字比较，改为校验 `tests/fixtures/current_behavior.json` 中的当前黄金摘要。默认配置 50 组、关闭持续运动配置 2 组均已通过，三轴 case 49 另含直接断言。
+
 ## 本次已执行的验证记录
 
-| 项目 | 2026-08-27 结果 |
+| 项目 | 结果 |
 | --- | --- |
 | 基线 Keil 6.24 全量编译 | 0 错误、0 警告；Code 15468、RO 408、RW 12、ZI 2396 字节。 |
 | 重构后 Keil 6.24 全量编译 | 0 错误、0 警告；Code 15054、RO 474、RW 12、ZI 2492 字节。 |
 | 结构/源代码对照 | 通过：ISR 原文、初始化函数体、时钟、TIM2 中断设置顺序、TMC 寄存器传输、厂商源码、`.ioc`、编译选项及模块依赖检查。 |
-| 默认配置主机 C 差分测试 | **49 组通过**，包含确定性噪声输入、边界参数、运动波形计算、连包/分包、停止/限位优先顺序、模拟故障与灯板空接口。 |
-| 原自检配置主机 C 差分测试（历史） | **2 组通过**；仅验证已删除的旧 X 轴自检，不代表当前固件功能。 |
-| 另外两个非默认配置 | `static_limits` 和 `continuous_disabled` 各 2 组**未执行完成**：基线测试 EXE 启动时 Windows 返回 WinError 5，随后文件不可用。未修改系统安全设置，不计为通过。 |
+| 2026-08-27 默认配置主机 C 差分测试（历史） | **49 组通过**，包含确定性噪声输入、边界参数、运动波形计算、连包/分包、停止/限位优先顺序、模拟故障与灯板空接口。 |
+| 2026-08-27 原自检配置主机 C 差分测试（历史） | **2 组通过**；仅验证已删除的旧 X 轴自检，不代表当前固件功能。 |
+| 2026-08-27 非默认配置（历史） | `static_limits` 和 `continuous_disabled` 各 2 组**未执行完成**：基线测试 EXE 启动时 Windows 返回 WinError 5，随后文件不可用。未修改系统安全设置，不计为通过。 |
+| 2026-09-04 当前固件 Keil 6.24 全量编译 | 0 错误、0 警告；Code 17970、RO 650、RW 12、ZI 2444 字节。 |
+| 2026-09-04 当前主机黄金回归 | **52 组通过**：默认配置 50 组，`continuous_disabled` 2 组；结构检查和三轴专项同时通过。 |
 | 实机烧录/测量 | 本轮未由助手执行；用户于 2026-08-31 报告既有功能测试暂时无误，并确认更换器件后的 24 V 抱闸输出正常。光电限位开关留待下一聊天测试。 |
 
 基线 HEX SHA-256：`E5E726FA41CCF6CA11C0C431C41E84EFBB416AA5C0546432E8A021AF8A50B1E2`。
 
 重构 HEX SHA-256：`49B143DC49089FB5CFDB10E6AA2A3122175392F1CCA052AB8855E12E98599A9E`。
 
-证据：`tmp/refactor_baseline_20260827/baseline_build.log`、`tmp/refactor_final_build.log`、`tmp/refactor_host_tests/report.json`（51 条已通过记录）。
+历史证据：`tmp/refactor_baseline_20260827/baseline_build.log`、`tmp/refactor_final_build.log`。当前主机回归明细写入 `tmp/refactor_host_tests/report.json`（52 条），固定摘要位于 `tests/fixtures/current_behavior.json`。
 
 ISR 源码未变，但编译后的回调代码节由 532 字节变为 500 字节。因此“逐周期响应时间相同”**尚未验证**，必须执行 T01～T03，不能只凭编译通过判定时序通过。
 
@@ -39,7 +43,7 @@ ISR 源码未变，但编译后的回调代码节由 532 字节变为 500 字节
 1. 使用同一块板、同一电源、同一电机和同一串口工具，先记录重构前基线，再测试新代码。不要用较早的发布版代替本次基线：工作区已有新的加减速逻辑。
 2. 基线完整副本：`tmp/refactor_baseline_20260827/MotorContrl/`。新工程：`MotorContrl/MDK-ARM/MotorContrl.uvprojx`。两者都用 Arm Compiler 6.24 原配置编译。
 3. 基线 HEX：`tmp/refactor_baseline_20260827/MotorContrl/MDK-ARM/MotorContrl/MotorContrl.hex`；重构 HEX：`MotorContrl/MDK-ARM/MotorContrl/MotorContrl.hex`。均属于本次测试构建，不是已验收发布文件。
-4. CN4 接主机串口，115200、8 数据位、无校验、1 停止位，以 HEX 方式发送，不追加 CR/LF。CN6 保留，不接入主控业务。
+4. CN6 接主机串口，使用 USART2 的 PA2/PA3，115200、8 数据位、无校验、1 停止位，以 HEX 方式发送，不追加 CR/LF；当前固件不启用 CN4/USART3。
 5. 电机先脱离危险机构、空载短时测试。现有记录中抱闸器件有硬件问题：PB13/CN5 先测空载电平，不接抱闸负载。限位接线未确认前不得依赖软件限位进行机构运动。
 6. 准备万用表、逻辑分析仪/示波器；测量地接板上 GND。限位需经过正确输入链路或已确认的 3.3 V 测试点触发，不得把 24 V 直接接 MCU GPIO。
 7. 记录测试日期、HEX SHA-256、供电电压、串口日志和波形文件。任一不一致先记录，不通过修改参数来掩盖差异。
@@ -50,8 +54,8 @@ ISR 源码未变，但编译后的回调代码节由 532 字节变为 500 字节
 | --- | --- | --- |
 | B01 | Keil Rebuild 基线和新工程 | 均为 0 错误、0 警告；确认生成的是本次 HEX。 |
 | B02 | ISR、系统启动、`.ioc`、HAL/CMSIS 对比 | `stm32f1xx_it.c` 不变；TIM2 回调及三个计算函数原文不变；厂商源码不变。 |
-| B03 | 优先级与定时器 | TIM2 优先级仍 2/0；SysTick 仍 15，分组仍为原配置；不新增 UART/限位中断。TIM2/3/4 参数保持原值。 |
-| B04 | 主机差分测试 | 原、新 C 代码对同一输入的硬件调用顺序和全部保留状态值一致。包含故障路径、分包/连包和灯板占位。 |
+| B03 | 优先级与定时器 | TIM2/3/4 与 EXTI9_5/EXTI15_10 优先级和参数保持当前配置；SysTick 仍为 15。 |
+| B04 | 主机黄金回归 | 当前 C 代码对 52 组输入的 HAL 轨迹、状态摘要和直接断言与固定黄金值一致；包含故障路径、分包/连包、灯板和三轴限位。 |
 | B05 | 工程目录和依赖 | `Inc/Src/Drivers/APPs`；新文件列入 Keil；业务模块没有直接相互调用或 extern 业务变量。 |
 
 可运行：
@@ -65,7 +69,7 @@ python tests/check_refactor.py --vcvars "D:\APP\Visual Studio 2026\install\VC\Au
 
 仅重跑本机目前保留的两种配置：`python tests/check_refactor.py --modes default continuous_disabled`。旧自检和静态限位配置已随无用测试代码删除；如果系统拒绝运行，记录阻塞，不应为通过测试而关闭安全保护。
 
-若 Python 不在 PATH，使用本机可用 Python 3 的绝对路径。测试夹具为重构前工作区源码，测试程序在 `tmp/refactor_host_tests/` 编译运行；不会打开串口、烧录或运行电机。明细结果写入该目录 `report.json`。
+若 Python 不在 PATH，使用本机可用 Python 3 的绝对路径。重构前 ZIP 仅用于结构冻结，运行期摘要来自 `tests/fixtures/current_behavior.json`；测试程序在 `tmp/refactor_host_tests/` 编译运行，不会打开串口、烧录或运行电机，明细写入该目录的 `report.json`。
 
 ## 3. 上电、基本通信与其他输出
 

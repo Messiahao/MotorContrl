@@ -1,4 +1,4 @@
-/* Included after either the original or refactored production source. */
+/* Included after the current production source and host HAL mocks. */
 static void Queue(const uint8_t *data, unsigned count)
 {
     assert(rx_count+count <= sizeof(rx_data));
@@ -35,7 +35,10 @@ int main(int argc, char **argv)
     registers_tmc_y[0x04]=registers_tmc_z[0x04]=0x30000000;
     registers_tmc_y[0x6c]=registers_tmc_z[0x6c]=0x10400050;
 #endif
-    TestInit(); Snapshot("init");
+    TestInit();
+    /* Startup order and final state are checked separately; trace runtime only. */
+    trace_hash=14695981039346656037ULL; event_count=0;
+    Snapshot("init");
     if(n==0) {
         Poll("idle"); tick=9; Poll("9ms"); tick=10; Poll("10ms");
         tick=499; Poll("499ms"); tick=500; Poll("500ms");
@@ -136,7 +139,7 @@ int main(int argc, char **argv)
         for(i=0;i<distance;i++) MockPulse(); Poll("profile-completion");
     } else if(n==48) {
         for(i=0;i<7100;i++) { tick=i; TestPoll(); }
-        Snapshot("legacy-self-test-7100ms");
+        Snapshot("long-idle-7100ms");
 #ifdef SERIAL_MOTION_AXIS_Y
     } else if(n==49) {
         static const unsigned axes[]={SERIAL_MOTION_AXIS_X,SERIAL_MOTION_AXIS_Y,SERIAL_MOTION_AXIS_Z};

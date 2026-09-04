@@ -23,26 +23,25 @@
 #include "system_clock.h"
 #include "app_scheduler.h"
 #include "app_limit.h"
-#include "gpio.h"
 
 /* ISR-owned variables remain in this translation unit with their original types.
    Foreground modules receive their addresses through AppMotionIrq. */
-volatile uint8_t serial_motion_active;
-volatile uint8_t serial_motion_done;
-volatile uint8_t serial_motion_axis;
-volatile uint8_t serial_motion_continuous;
-volatile uint32_t serial_motion_pulses_done;
-volatile uint32_t serial_motion_target_steps;
-volatile uint16_t serial_motion_target_speed_hz;
-volatile uint16_t serial_motion_current_speed_hz;
-volatile uint16_t serial_motion_peak_speed_hz;
-volatile uint8_t serial_motion_profile_phase;
-volatile uint32_t serial_motion_profile_accel_steps;
-volatile uint32_t serial_motion_profile_cruise_steps;
-volatile uint32_t serial_motion_profile_decel_steps;
-volatile uint32_t serial_motion_profile_update_count;
-volatile uint32_t serial_motion_last_period_ticks;
-volatile uint8_t serial_motion_profile_error;
+static volatile uint8_t serial_motion_active;
+static volatile uint8_t serial_motion_done;
+static volatile uint8_t serial_motion_axis;
+static volatile uint8_t serial_motion_continuous;
+static volatile uint32_t serial_motion_pulses_done;
+static volatile uint32_t serial_motion_target_steps;
+static volatile uint16_t serial_motion_target_speed_hz;
+static volatile uint16_t serial_motion_current_speed_hz;
+static volatile uint16_t serial_motion_peak_speed_hz;
+static volatile uint8_t serial_motion_profile_phase;
+static volatile uint32_t serial_motion_profile_accel_steps;
+static volatile uint32_t serial_motion_profile_cruise_steps;
+static volatile uint32_t serial_motion_profile_decel_steps;
+static volatile uint32_t serial_motion_profile_update_count;
+static volatile uint32_t serial_motion_last_period_ticks;
+static volatile uint8_t serial_motion_profile_error;
 
 /* Frozen ISR call chain: keep bodies and location in main.c unchanged. */
 static uint32_t Serial_Motion_IntegerSqrt(uint32_t value)

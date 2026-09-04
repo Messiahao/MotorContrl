@@ -168,3 +168,12 @@
 - 旧 X 轴自动上电自检及其专用状态、测试宏和 X 轴兼容包装已删除；三轴运动所需检查统一由 `AppMotion` 公共路径完成。
 - Z 轴抱闸仍由现有 `0x0400` 辅助命令独立控制，运动状态机不会自动释放或闭合；Z 运动前必须先释放抱闸，运动停止并确认静止后再闭合抱闸。
 - 本次未执行代码归档、Git 提交、标签或 GitHub 发布；待 Y/Z 实机验证通过后再决定是否归档。
+
+## 2026-09-04 代码精简开发基线归档
+
+- 按板级驱动、应用层、入口/中断和回归基础设施依次完成 24 个模块的静态扫描、交叉引用与保守精简；逐模块结果见 `cleanup_records/` 和 `CLEANUP_PROGRESS.md`。
+- 删除旧自动自检、纯调试协议/限位状态、未启用的 USART3 及无效 HAL 配置模板；当前主通信接口统一为 CN6/USART2（PA2/PA3）。三轴运动、限位 ISR、寄存器配置和对外协议未在本轮继续扩展。
+- `python tests/check_refactor.py` 通过：结构冻结、默认配置 50 组和关闭持续运动命令配置 2 组，共 52 组主机黄金回归；三轴专项断言另行通过。主机模拟不等于硬件验收。
+- Keil Arm Compiler 6.24 全量 Rebuild 为 0 错误、0 警告；资源为 `Code=17970`、`RO-data=650`、`RW-data=12`、`ZI-data=2444`。
+- 匹配 HEX：`firmware_releases/dev-20260904-code-cleanup-baseline-unverified.hex`，SHA-256 为 `28C4839DD5C3D6EC9CE58B96F12200B0C2CAA223221329BE3296D8BCDD8CE499`。
+- 本轮未新增实机烧录或测量结果。Y/Z 运动与限位、其余限位通道、MCP4728 I2C/电压及最高速中断时序仍待验收，因此使用 `dev-20260904-code-cleanup-baseline-unverified`，只作为后续开发基线，不标记为正式 `v` 发布。

@@ -8,7 +8,8 @@ the Git tag and project version notes. The current published image is
 `v0.16-layered-refactor-aux-output-pass.hex`.
 
 The latest archived development snapshot is
-`dev-20260901-limit-exti-motion-stop-pass.hex`. It records the user-verified
-X-axis continuous-motion limit abort; it is not a formal `v` release because
-the ordinary-stop hold-enable change and MCP4728 hardware path are not fully
+`dev-20260904-code-cleanup-baseline-unverified.hex`. It records the completed
+24-module cleanup, CN6/USART2 host interface, and matching build used as the
+next development baseline. It is not a formal `v` release because Y/Z motion,
+remaining limits, MCP4728 hardware behavior, and real-time timing are not fully
 validated on target.

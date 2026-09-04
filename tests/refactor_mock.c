@@ -13,14 +13,12 @@ typedef struct { uint32_t Pin, Mode, Pull, Speed; } GPIO_InitTypeDef;
 typedef struct { uint32_t DR; } USART_TypeDef;
 typedef struct { USART_TypeDef *Instance; } UART_HandleTypeDef;
 typedef struct { void *Instance; } TIM_HandleTypeDef;
-typedef struct { unsigned unused; } SPI_HandleTypeDef;
 static GPIO_TypeDef ports[3] = {{0,65535}, {1,65535}, {2,65535}};
 static USART_TypeDef uart_instance;
-UART_HandleTypeDef huart3 = { &uart_instance };
+UART_HandleTypeDef huart2 = { &uart_instance };
 TIM_HandleTypeDef htim2 = { (void *)0x40000000 };
 TIM_HandleTypeDef htim3 = { (void *)0x40000400 };
 TIM_HandleTypeDef htim4 = { (void *)0x40000800 };
-SPI_HandleTypeDef hspi1;
 #define GPIOA (&ports[0])
 #define GPIOB (&ports[1])
 #define GPIOC (&ports[2])
@@ -44,7 +42,6 @@ SPI_HandleTypeDef hspi1;
 #define GPIO_PIN_13 (1U << 13)
 #define GPIO_PIN_14 (1U << 14)
 #define GPIO_PIN_15 (1U << 15)
-#define TIM2 ((void *)0x40000000)
 #define TIM3 ((void *)0x40000400)
 #define TIM4 ((void *)0x40000800)
 #define TIM2_IRQn 28
@@ -66,7 +63,6 @@ SPI_HandleTypeDef hspi1;
 #define UART_FLAG_ORE 8
 #define UART_FLAG_RXNE 32
 #define RESET 0
-#define HAL_MAX_DELAY 0xffffffffU
 
 static uint32_t tick, input_levels[3] = {65535,65535,65535};
 static uint32_t output_levels[3], registers_tmc[128];
@@ -173,10 +169,6 @@ static HAL_StatusTypeDef HAL_UART_Transmit(UART_HandleTypeDef *uart, uint8_t *da
 }
 static uint32_t MockTmcReadAxis(unsigned axis, unsigned address);
 static void MockTmcWriteAxis(unsigned axis, unsigned address, uint32_t value);
-static uint32_t MockTmcRead(unsigned address)
-{
-    return MockTmcReadAxis(0,address);
-}
 static uint32_t MockTmcReadAxis(unsigned axis, unsigned address)
 {
     uint32_t *registers = axis==1 ? registers_tmc_y : axis==2 ? registers_tmc_z : registers_tmc;
@@ -187,10 +179,6 @@ static uint32_t MockTmcReadAxis(unsigned axis, unsigned address)
     if(fault==4 && address==0x6c) value^=1;
     if(fault==8 && address==0x01 && !(output_levels[2]&GPIO_PIN_3)) value|=2;
     Trace(22,address,value,axis); return value;
-}
-static void MockTmcWrite(unsigned address, uint32_t value)
-{
-    MockTmcWriteAxis(0,address,value);
 }
 static void MockTmcWriteAxis(unsigned axis, unsigned address, uint32_t value)
 {
